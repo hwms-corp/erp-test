@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Sparkles, Inbox } from 'lucide-react';
+import { Mail, RefreshCw, Inbox } from 'lucide-react';
 import { Pagination, usePagination } from '@/components/Pagination';
 import { useMail } from '@/hooks/useMail';
+import { supabase } from '@/lib/supabase';
 import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
 import { formatYmdSlash } from '@/types';
 
@@ -30,10 +31,9 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 };
 
 export function MailInboxView() {
-  const { fetchMails, upsertMail, runAiPipeline } = useMail();
+  const { fetchMails } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<number | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -41,47 +41,33 @@ export function MailInboxView() {
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     const { data } = await fetchMails({ status: status || undefined, q: q || undefined });
     setMails(data ?? []);
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }, [fetchMails, status, q]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
+
+  // 새 메일/상태 변경 시 목록 자동 갱신
+  useEffect(() => {
+    const channel = supabase
+      .channel('mail_inbox_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'mail_messages' },
+        () => { void load({ silent: true }); },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(mails, 15);
   const paged = getPage(page);
-
-  const demoIngest = async () => {
-    const sampleBody = [
-      '제목: 견적의뢰 #DEMO',
-      '거래처: 한진해운',
-      '납기: 2026-10-15',
-      '선명: MV DEMO-1',
-      '담당: 김영업',
-      '1. 품명: 밸브 / 사양: DN50 PN16 / 수량: 4 EA',
-      '2. 품명: 가스켓 / 사양: ASME B16.20 / 수량: 2 SET',
-      '비고: 긴급 요청',
-    ].join('\n');
-
-    const id = `demo-${Date.now()}`;
-    const { data } = await upsertMail({
-      gmail_message_id: id,
-      gmail_thread_id: id,
-      subject: '견적의뢰 #DEMO',
-      from_addr: 'rfq@hanjin.example',
-      to_addr: 'sales@haewon.example',
-      snippet: '견적의뢰 데모 메일',
-      body_text: sampleBody,
-    });
-    if (data) {
-      setBusyId(data.id);
-      await runAiPipeline(data);
-      setBusyId(null);
-      await load();
-    }
-  };
 
   const statuses = useMemo(
     () => ['', 'received', 'review_required', 'ready_auto', 'registered', 'rejected', 'failed'],
@@ -97,22 +83,13 @@ export function MailInboxView() {
           </h2>
           <p className="text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={load}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
-          >
-            <RefreshCw className="w-4 h-4" /> 새로고침
-          </button>
-          <button
-            type="button"
-            onClick={demoIngest}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700"
-          >
-            <Sparkles className="w-4 h-4" /> 데모 메일+AI
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
+        >
+          <RefreshCw className="w-4 h-4" /> 새로고침
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
@@ -152,14 +129,14 @@ export function MailInboxView() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
-              <th className="px-4 py-3">수신</th>
-              <th className="px-4 py-3">제목</th>
-              <th className="px-4 py-3">발신</th>
-              <th className="px-4 py-3">상태</th>
-              <th className="px-4 py-3 text-right">신뢰도</th>
+              <th className="px-4 py-3 w-[7.5rem]">수신</th>
+              <th className="px-4 py-3 w-[42%]">제목</th>
+              <th className="px-4 py-3 w-[11rem]">발신</th>
+              <th className="px-4 py-3 w-[6.5rem]">상태</th>
+              <th className="px-4 py-3 w-[4.5rem] text-right">신뢰도</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -167,7 +144,7 @@ export function MailInboxView() {
               <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && paged.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">메일이 없습니다. 데모 메일+AI로 테스트하세요.</td></tr>
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {paged.map(m => (
               <tr
@@ -179,13 +156,16 @@ export function MailInboxView() {
                   {formatYmdSlash((m.received_at || '').slice(0, 10))}
                 </td>
                 <td className="px-4 py-3 font-medium text-slate-900">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Mail className="w-4 h-4 text-slate-400" />
-                    {m.subject || '(제목 없음)'}
-                    {busyId === m.id && <span className="text-xs text-amber-600">AI 처리중…</span>}
+                  <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
+                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="truncate">{m.subject || '(제목 없음)'}</span>
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{m.from_addr || '—'}</td>
+                <td className="px-4 py-3 text-slate-600">
+                  <span className="block truncate" title={m.from_addr || undefined}>
+                    {m.from_addr || '—'}
+                  </span>
+                </td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
                     {STATUS_LABEL[m.process_status]}
