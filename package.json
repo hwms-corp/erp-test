@@ -10,7 +10,10 @@
     "lint": "tsc --noEmit",
     "git:push:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-erp-test.ps1",
     "git:push:erp": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-erp.ps1",
-    "git:push:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-all.ps1"
+    "git:push:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-all.ps1",
+    "ai:poc:generate": "tsx scripts/ai-poc/generate-ground-truth.mts",
+    "ai:poc:eval": "tsx scripts/ai-poc/evaluate.mts",
+    "ai:api:dev": "npm --prefix ai-doc-api run dev"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
@@ -28,6 +31,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "tailwindcss": "^4.1.14",
+    "tsx": "^4.23.15",
     "typescript": "~5.8.2"
   }
 }

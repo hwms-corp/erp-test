@@ -22,8 +22,52 @@ export function useOrders() {
     if (filters?.status) query = query.eq('status', filters.status);
 
     const { data, error } = await query;
-    if (!error && data) setOrders(data);
+    if (!error && data) {
+      // 뷰를 재생성하지 않고 orders 테이블에서 AI 메타만 보강 (기존 뷰/데이터 안전)
+      const ids = data.map((o: { id: number }) => o.id);
+      let merged = data as OrderWithPartner[];
+      if (ids.length > 0) {
+        const { data: meta } = await supabase
+          .from('orders')
+          .select('id, source, ai_review_status, ai_mail_message_id')
+          .in('id', ids);
+        if (meta) {
+          const map = new Map(meta.map(m => [m.id, m]));
+          merged = data.map((o: OrderWithPartner) => {
+            const m = map.get(o.id);
+            return m
+              ? {
+                  ...o,
+                  source: m.source ?? 'manual',
+                  ai_review_status: m.ai_review_status ?? null,
+                  ai_mail_message_id: m.ai_mail_message_id ?? null,
+                }
+              : { ...o, source: o.source ?? 'manual', ai_review_status: o.ai_review_status ?? null };
+          });
+        }
+      }
+      setOrders(merged);
+      setLoading(false);
+      return { data: merged, error };
+    }
     setLoading(false);
+    return { data, error };
+  }, []);
+
+  const markAiReviewed = useCallback(async (orderId: number) => {
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ ai_review_status: 'reviewed' })
+      .eq('id', orderId)
+      .eq('source', 'ai_mail')
+      .select('id, ai_review_status')
+      .single();
+
+    if (!error) {
+      setOrders(prev =>
+        prev.map(o => (o.id === orderId ? { ...o, ai_review_status: 'reviewed' } : o)),
+      );
+    }
     return { data, error };
   }, []);
 
@@ -256,6 +300,6 @@ export function useOrders() {
 
   return {
     orders, loading, fetchOrders, fetchOrderItems, createOrder, confirmOrder, confirmOrderWithItems,
-    updateOrder, getConfirmedOrderEditBlockReason, revertToDraft, deleteOrder,
+    updateOrder, getConfirmedOrderEditBlockReason, revertToDraft, deleteOrder, markAiReviewed,
   };
 }

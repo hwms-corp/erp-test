@@ -2,22 +2,49 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mergeQuery } from '@/lib/listQuery';
 import { motion } from 'motion/react';
-import { Plus, Search, Calendar, CheckCircle2, Trash2, Edit } from 'lucide-react';
+import { Plus, Search, Calendar, CheckCircle2, Trash2, Edit, ClipboardCheck } from 'lucide-react';
 import { useOrders } from '@/hooks/useOrders';
-import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Pagination, usePagination } from '@/components/Pagination';
 import { HighlightText } from '@/components/HighlightText';
 import { getHighlightQueries } from '@/lib/searchHighlight';
-import { fmt, fmtW, monthEnd } from '@/types';
+import { fmtW, monthEnd } from '@/types';
 import type { OrderWithPartner } from '@/types';
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
+type AiFilter = 'all' | 'pending_review' | 'reviewed' | 'manual';
+
+function isAiPending(o: OrderWithPartner) {
+  return o.source === 'ai_mail' && o.ai_review_status === 'pending_review';
+}
+
+function isAiReviewed(o: OrderWithPartner) {
+  return o.source === 'ai_mail' && o.ai_review_status === 'reviewed';
+}
+
+function AiReviewBadge({ o }: { o: OrderWithPartner }) {
+  if (o.source !== 'ai_mail') return null;
+  if (o.ai_review_status === 'pending_review') {
+    return (
+      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 align-middle">
+        AI 검토대기
+      </span>
+    );
+  }
+  if (o.ai_review_status === 'reviewed') {
+    return (
+      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-100 text-sky-800 align-middle">
+        AI 검토완료
+      </span>
+    );
+  }
+  return null;
+}
+
 export function OrderListView() {
-  const { user } = useAuth();
-  const { orders, loading, fetchOrders, deleteOrder } = useOrders();
+  const { orders, loading, fetchOrders, deleteOrder, markAiReviewed } = useOrders();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -27,6 +54,7 @@ export function OrderListView() {
       q: searchParams.get('q') ?? '',
       col: searchParams.get('col') ?? 'all',
       status: searchParams.get('status') ?? 'all',
+      ai: (searchParams.get('ai') ?? 'all') as AiFilter,
       from: searchParams.get('from') ?? '',
       to: searchParams.get('to') ?? monthEnd(),
       page: Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1,
@@ -38,7 +66,7 @@ export function OrderListView() {
     setSearchInput(listQ.q);
   }, [listQ.q]);
 
-  const { q: search, col: searchCol, status: statusFilter, from: dateFrom, to: dateTo, page } = listQ;
+  const { q: search, col: searchCol, status: statusFilter, ai: aiFilter, from: dateFrom, to: dateTo, page } = listQ;
   const [orderItemNames, setOrderItemNames] = useState<Map<number, string>>(new Map());
   const searchCols = [{ k: 'all', l: '전체' }, { k: 'doc_no', l: '견적번호' }, { k: 'partner', l: '거래처' }, { k: 'name', l: '품명' }, { k: 'vessel', l: 'Vessel' }];
 
@@ -62,6 +90,10 @@ export function OrderListView() {
 
   const filtered = useMemo(() => {
     let list = orders;
+    if (aiFilter === 'pending_review') list = list.filter(isAiPending);
+    else if (aiFilter === 'reviewed') list = list.filter(isAiReviewed);
+    else if (aiFilter === 'manual') list = list.filter(o => o.source !== 'ai_mail');
+
     if (dateFrom) list = list.filter(o => o.order_date >= dateFrom);
     if (dateTo) list = list.filter(o => o.order_date <= dateTo);
     if (search) {
@@ -77,8 +109,15 @@ export function OrderListView() {
         return false;
       });
     }
-    return list;
-  }, [orders, search, searchCol, orderItemNames, dateFrom, dateTo]);
+
+    // AI 검토대기 건을 항상 최상단
+    return [...list].sort((a, b) => {
+      const ap = isAiPending(a) ? 0 : 1;
+      const bp = isAiPending(b) ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      return (b.order_date || '').localeCompare(a.order_date || '');
+    });
+  }, [orders, search, searchCol, orderItemNames, dateFrom, dateTo, aiFilter]);
 
   const { totalItems, totalPages, pageSize, getPage } = usePagination(filtered);
   const visible = getPage(page);
@@ -101,6 +140,13 @@ export function OrderListView() {
     }
   };
 
+  const handleMarkReviewed = async (o: OrderWithPartner, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`${o.doc_no}\nAI 검토완료 처리하시겠습니까?`)) return;
+    const { error } = await markAiReviewed(o.id);
+    if (error) alert('검토완료 처리 실패: ' + (error.message || ''));
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex justify-between items-center">
@@ -120,6 +166,28 @@ export function OrderListView() {
             key={t.k}
             onClick={() => setListParams({ status: t.k, page: '1' })}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${statusFilter === t.k ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {([
+          { k: 'all' as const, l: '전체 출처' },
+          { k: 'pending_review' as const, l: 'AI 검토대기' },
+          { k: 'reviewed' as const, l: 'AI 검토완료' },
+          { k: 'manual' as const, l: '수동 작성' },
+        ]).map(t => (
+          <button
+            key={t.k}
+            type="button"
+            onClick={() => setListParams({ ai: t.k === 'all' ? null : t.k, page: '1' })}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              aiFilter === t.k
+                ? 'bg-amber-600 text-white border-amber-600'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
           >
             {t.l}
           </button>
@@ -203,9 +271,15 @@ export function OrderListView() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {visible.map(o => (
-                <tr key={o.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-indigo-600 hover:underline cursor-pointer" onClick={() => navigate(`/orders/${o.id}/preview`)}>
-                    <HighlightText text={o.doc_no} queries={getHighlightQueries(search, searchCol, 'doc_no')} />
+                <tr
+                  key={o.id}
+                  className={`hover:bg-slate-50 ${isAiPending(o) ? 'bg-amber-50/40' : ''}`}
+                >
+                  <td className="px-4 py-3 font-medium text-indigo-600">
+                    <span className="hover:underline cursor-pointer" onClick={() => navigate(`/orders/${o.id}/preview`)}>
+                      <HighlightText text={o.doc_no} queries={getHighlightQueries(search, searchCol, 'doc_no')} />
+                    </span>
+                    <AiReviewBadge o={o} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">{o.order_date}</td>
                   <td className="px-4 py-3 text-slate-600">
@@ -217,6 +291,16 @@ export function OrderListView() {
                   <td className="px-4 py-3 text-right font-medium text-slate-900">{fmtW(o.total_amount)}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1">
+                      {isAiPending(o) && (
+                        <button
+                          onClick={e => handleMarkReviewed(o, e)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-800 rounded-lg text-xs font-medium hover:bg-amber-100 transition-colors"
+                          title="AI 검토완료"
+                        >
+                          <ClipboardCheck className="w-3.5 h-3.5" />
+                          검토완료
+                        </button>
+                      )}
                       {o.status === 'draft' && (
                         <>
                           <button

@@ -51,6 +51,9 @@ export interface Partner {
   deleted_at: string | null;
 }
 
+export type OrderSource = 'manual' | 'ai_mail';
+export type AiReviewStatus = 'pending_review' | 'reviewed';
+
 export interface Order {
   id: number;
   doc_no: string;
@@ -64,6 +67,11 @@ export interface Order {
   tax_invoice_issued_status: TaxInvoiceIssuedStatus | null;
   tax_invoice_issued_date: string | null;
   origin_order_id: number | null;
+  /** 수동 작성 | AI 메일 자동등록 */
+  source?: OrderSource | string | null;
+  /** AI 건만: 검토대기 | 검토완료. 수동 견적은 null */
+  ai_review_status?: AiReviewStatus | string | null;
+  ai_mail_message_id?: number | null;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -222,13 +230,13 @@ export function statusLabel(status: string): string {
 // ─── Role-based access ────────────────────────────────────────
 
 export type ViewPath =
-  | '/dashboard' | '/partners' | '/orders' | '/confirmed' | '/pos' | '/receiving' | '/delivery';
+  | '/dashboard' | '/partners' | '/orders' | '/confirmed' | '/pos' | '/receiving' | '/delivery' | '/mail';
 
 export const ROLE_ACCESS: Record<RoleCode, ViewPath[]> = {
-  admin: ['/dashboard', '/partners', '/orders', '/confirmed', '/pos', '/receiving', '/delivery'],
-  sales: ['/dashboard', '/partners', '/orders', '/confirmed', '/delivery'],
+  admin: ['/dashboard', '/partners', '/orders', '/confirmed', '/pos', '/receiving', '/delivery', '/mail'],
+  sales: ['/dashboard', '/partners', '/orders', '/confirmed', '/delivery', '/mail'],
   purchasing: ['/dashboard', '/partners', '/pos', '/receiving'],
-  support: ['/dashboard', '/partners', '/orders', '/confirmed', '/pos', '/receiving', '/delivery'],
+  support: ['/dashboard', '/partners', '/orders', '/confirmed', '/pos', '/receiving', '/delivery', '/mail'],
 };
 
 export const ROLE_COLORS: Record<RoleCode, { bg: string; text: string }> = {

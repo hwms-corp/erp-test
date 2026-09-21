@@ -15,6 +15,8 @@ import { POSearchView } from '@/views/POSearchView';
 import { ReceivingView } from '@/views/ReceivingView';
 import { DeliveryView } from '@/views/DeliveryView';
 import { DashboardView } from '@/views/DashboardView';
+import { MailInboxView } from '@/views/MailInboxView';
+import { MailReviewView } from '@/views/MailReviewView';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuthProvider();
@@ -64,6 +66,8 @@ export default function App() {
 
             <Route path="/receiving" element={<ReceivingView />} />
             <Route path="/delivery" element={<DeliveryView />} />
+            <Route path="/mail" element={<MailInboxView />} />
+            <Route path="/mail/:id" element={<MailReviewView />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/partners" replace />} />

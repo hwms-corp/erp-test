@@ -1,0 +1,6 @@
+# Supabase local/link config (minimal)
+# https://supabase.com/docs/guides/functions
+
+[functions.gmail-watch]
+# Pub/Sub push cannot send Supabase JWT — disable gateway JWT verify for this function.
+verify_jwt = false
