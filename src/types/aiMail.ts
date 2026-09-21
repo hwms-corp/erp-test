@@ -160,6 +160,8 @@ export interface MailMessage {
   matched_partner_id: number | null;
   registered_order_id: number | null;
   error_message: string | null;
+  is_read: boolean;
+  read_at: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

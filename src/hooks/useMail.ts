@@ -42,6 +42,17 @@ export function useMail() {
     return { data: data as MailAttachment[] | null, error };
   }, []);
 
+  const markMailRead = useCallback(async (mailId: number) => {
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .update({ is_read: true, read_at: new Date().toISOString() })
+      .eq('id', mailId)
+      .eq('is_read', false)
+      .select()
+      .maybeSingle();
+    return { data: data as MailMessage | null, error };
+  }, []);
+
   /** Gmail Push / 수동 수집으로 들어온 메일 저장 (idempotent by gmail_message_id) */
   const upsertMail = useCallback(async (payload: {
     gmail_message_id: string;
@@ -275,6 +286,7 @@ export function useMail() {
     fetchMails,
     fetchMail,
     fetchAttachments,
+    markMailRead,
     upsertMail,
     runAiPipeline,
     saveExtraction,

@@ -18,7 +18,7 @@ export function MailReviewView() {
   const mailId = Number(id);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchMail, fetchAttachments, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners } = useMail();
+  const { fetchMail, fetchAttachments, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners } = useMail();
   const { fetchPartners } = usePartners();
 
   const [mail, setMail] = useState<MailMessage | null>(null);
@@ -50,6 +50,10 @@ export function MailReviewView() {
       const { data } = await fetchMail(mailId);
       setMail(data);
       setExtraction(data?.extraction ?? null);
+      if (data && data.is_read === false) {
+        const { data: updated } = await markMailRead(mailId);
+        if (updated) setMail(updated);
+      }
       const { data: atts } = await fetchAttachments(mailId);
       setAttachments((atts ?? []).map(a => ({ id: a.id, filename: a.filename })));
       const { data: partnerList } = await fetchPartners();
@@ -57,7 +61,7 @@ export function MailReviewView() {
       setPartners(list);
       if (data?.extraction && list.length) applyPartnerSuggestions(data.extraction, list);
     })();
-  }, [mailId, fetchMail, fetchAttachments, fetchPartners, suggestPartners]);
+  }, [mailId, fetchMail, fetchAttachments, fetchPartners, markMailRead, suggestPartners]);
 
   const lines = useMemo(
     () => (extraction ? extractionToMaterialLines(extraction) : []),

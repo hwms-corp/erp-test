@@ -2,17 +2,43 @@
 
 @keyframes mail-row-arrive {
   0% {
-    background-color: rgb(255 247 237); /* orange-50 */
-    box-shadow: inset 3px 0 0 0 rgb(249 115 22); /* orange-500 */
+    background-color: rgb(254 215 170); /* orange-200 */
   }
   100% {
-    background-color: transparent;
-    box-shadow: inset 3px 0 0 0 transparent;
+    background-color: rgb(255 247 237); /* orange-50 */
   }
 }
 
-.mail-row-new {
-  animation: mail-row-arrive 4s ease-out;
+/* 미읽음: 읽을 때까지 유지 */
+.mail-row-unread {
   box-shadow: inset 3px 0 0 0 rgb(249 115 22);
   background-color: rgb(255 247 237);
+}
+
+.mail-row-unread.mail-row-arrive {
+  animation: mail-row-arrive 1.2s ease-out;
+}
+
+/* 우하단 메일 알림 스택 — ERP slate 톤 스크롤바 */
+.mail-toast-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(203 213 225) transparent; /* slate-300 */
+}
+
+.mail-toast-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mail-toast-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.mail-toast-scroll::-webkit-scrollbar-thumb {
+  background: rgb(203 213 225);
+  border-radius: 999px;
+}
+
+.mail-toast-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184); /* slate-400 */
 }
