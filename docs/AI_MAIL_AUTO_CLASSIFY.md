@@ -139,5 +139,16 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-d
 | Gmail → AI 메일함 수신 | O (Edge+Supabase) | O |
 | 메일 목록/원문 보기 | O | O |
 | 수신 시 자동 분류/추출 | X (`수신`만) | O |
+| 첨부 PDF/이미지 OCR | X | O (Vision + PDF file input) |
 | AI 재실행 / 추출 | X (브라우저가 API 못 부름) | O |
 | 견적 등록·검토 | 추출 있으면 O | O |
+
+## OCR (첨부 PDF/이미지)
+
+수신 메일 본문뿐 아니라 PDF·이미지 첨부를 Gmail에서 받아 AI API로 넘깁니다.
+
+- Edge `gmail-watch`: 첨부 다운로드 → `content_base64`로 classify/extract 요청
+- `ai-doc-api`: 이미지는 Vision(`image_url`), PDF는 file modality (실패 시 본문만 폴백)
+- 한도: 파일 최대 5개, 개당 약 8MB
+
+배포 시 **Railway(ai-doc-api) + `gmail-watch` 둘 다** 갱신해야 OCR이 동작합니다.

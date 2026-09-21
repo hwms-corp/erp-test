@@ -27,7 +27,7 @@ type GmailHeader = { name: string; value: string };
 type GmailPayload = {
   mimeType?: string;
   filename?: string;
-  body?: { data?: string; size?: number };
+  body?: { data?: string; size?: number; attachmentId?: string };
   parts?: GmailPayload[];
   headers?: GmailHeader[];
 };
@@ -90,7 +90,13 @@ function collectText(payload: GmailPayload | undefined): { text: string | null; 
 }
 
 function collectAttachmentMeta(payload: GmailPayload | undefined) {
-  const out: { filename: string; mime_type: string | null; size_bytes: number | null }[] = [];
+  const out: {
+    filename: string;
+    mime_type: string | null;
+    size_bytes: number | null;
+    attachment_id: string | null;
+    data_b64url: string | null;
+  }[] = [];
   const walk = (p?: GmailPayload) => {
     if (!p) return;
     if (p.filename) {
@@ -98,12 +104,78 @@ function collectAttachmentMeta(payload: GmailPayload | undefined) {
         filename: p.filename,
         mime_type: p.mimeType ?? null,
         size_bytes: p.body?.size ?? null,
+        attachment_id: p.body?.attachmentId ?? null,
+        data_b64url: p.body?.data ?? null,
       });
     }
     for (const part of p.parts || []) walk(part);
   };
   walk(payload);
   return out;
+}
+
+function isOcrCandidate(filename: string, mime: string | null): boolean {
+  const m = (mime || '').toLowerCase();
+  const f = filename.toLowerCase();
+  return (
+    m.includes('pdf') ||
+    f.endsWith('.pdf') ||
+    m.startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f)
+  );
+}
+
+function b64urlToStd(data: string): string {
+  const pad = '='.repeat((4 - (data.length % 4)) % 4);
+  return (data + pad).replace(/-/g, '+').replace(/_/g, '/');
+}
+
+async function loadAttachmentBase64(
+  messageId: string,
+  att: {
+    attachment_id: string | null;
+    data_b64url: string | null;
+  },
+  accessToken: string,
+): Promise<string | null> {
+  if (att.data_b64url) return b64urlToStd(att.data_b64url);
+  if (!att.attachment_id) return null;
+  const data = await gmailGet(
+    `/users/${gmailUser()}/messages/${messageId}/attachments/${att.attachment_id}`,
+    accessToken,
+  );
+  if (!data?.data) return null;
+  return b64urlToStd(String(data.data));
+}
+
+const MAX_OCR_FILES = 5;
+const MAX_OCR_BYTES = 8 * 1024 * 1024;
+
+async function collectOcrFiles(
+  messageId: string,
+  attachments: ReturnType<typeof collectAttachmentMeta>,
+  accessToken: string,
+): Promise<{ filename: string; mime_type?: string; content_base64: string }[]> {
+  const files: { filename: string; mime_type?: string; content_base64: string }[] = [];
+  for (const att of attachments) {
+    if (files.length >= MAX_OCR_FILES) break;
+    if (!isOcrCandidate(att.filename, att.mime_type)) continue;
+    if (att.size_bytes != null && att.size_bytes > MAX_OCR_BYTES) continue;
+    try {
+      const b64 = await loadAttachmentBase64(messageId, att, accessToken);
+      if (!b64) continue;
+      const approx = Math.floor((b64.length * 3) / 4);
+      if (approx > MAX_OCR_BYTES) continue;
+      files.push({
+        filename: att.filename,
+        mime_type: att.mime_type ?? undefined,
+        content_base64: b64,
+      });
+    } catch (e) {
+      console.error('attachment download failed', att.filename, e);
+    }
+  }
+  return files;
 }
 
 async function getAccessToken(): Promise<string> {
@@ -199,12 +271,14 @@ async function runAiForMail(
   sb: ReturnType<typeof adminClient>,
   mailId: number,
   text: string,
+  files?: { filename: string; mime_type?: string; content_base64: string }[],
 ): Promise<{ status: string; skipped?: boolean; error?: string }> {
   if (!aiApiConfigured()) {
     console.log('AI skipped: AI_DOC_API_URL/KEY not set');
     return { status: 'received', skipped: true };
   }
-  if (!text.trim()) {
+  const hasFiles = (files?.length ?? 0) > 0;
+  if (!text.trim() && !hasFiles) {
     await sb
       .from('mail_messages')
       .update({ process_status: 'failed', error_message: 'empty body' })
@@ -215,9 +289,10 @@ async function runAiForMail(
   await sb.from('mail_messages').update({ process_status: 'classifying' }).eq('id', mailId);
 
   try {
+    const payload = { text, files: files?.length ? files : undefined };
     const cls = await aiDocRequest<{
       data: { document_type: string; confidence: number; language: string };
-    }>('/v1/documents/classify', { text });
+    }>('/v1/documents/classify', payload);
 
     const isRfq = cls.data.document_type === 'quotation_request';
     await sb
@@ -233,7 +308,7 @@ async function runAiForMail(
 
     const extracted = await aiDocRequest<{ data: CanonicalExtraction }>(
       '/v1/documents/extract',
-      { text },
+      payload,
     );
     const status = decideProcessStatus(extracted.data);
 
@@ -246,7 +321,7 @@ async function runAiForMail(
       })
       .eq('id', mailId);
 
-    console.log(`AI mail ${mailId} → ${status}`);
+    console.log(`AI mail ${mailId} → ${status} (files=${files?.length ?? 0})`);
     return { status };
   } catch (e) {
     const msg = String(e);
@@ -464,7 +539,8 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
     synced += 1;
 
     const bodyForAi = [text || '', msg.snippet || ''].filter(Boolean).join('\n');
-    const ai = await runAiForMail(sb, row.id, bodyForAi);
+    const ocrFiles = await collectOcrFiles(String(msg.id), attachments, accessToken);
+    const ai = await runAiForMail(sb, row.id, bodyForAi, ocrFiles);
     aiResults.push({ mailId: row.id, status: ai.status });
   }
 
