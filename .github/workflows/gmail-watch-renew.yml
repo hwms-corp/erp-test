@@ -1,0 +1,19 @@
+# Gmail Watch expires ~7 days. Renew daily so push keeps working.
+name: gmail-watch-renew
+
+on:
+  schedule:
+    # Every day 03:00 UTC (KST 12:00)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renew Gmail users.watch
+        run: |
+          curl -sS -X POST \
+            "https://gkwpurakullummhekdbb.supabase.co/functions/v1/gmail-watch?action=renew" \
+            -H "Content-Type: application/json" \
+            -d "{}"

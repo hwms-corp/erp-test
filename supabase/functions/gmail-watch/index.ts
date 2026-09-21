@@ -273,10 +273,17 @@ async function registerWatch(accessToken: string) {
   const expirationMs = watch.expiration ? Number(watch.expiration) : null;
   const watchExpiration = expirationMs ? new Date(expirationMs).toISOString() : null;
 
+  // Preserve last_history_id if we already have one — only update expiration/topic
+  const { data: prev } = await sb
+    .from('gmail_sync_state')
+    .select('last_history_id')
+    .eq('mailbox', mailbox)
+    .maybeSingle();
+
   await sb.from('gmail_sync_state').upsert(
     {
       mailbox,
-      last_history_id: historyId || null,
+      last_history_id: prev?.last_history_id || historyId || null,
       watch_expiration: watchExpiration,
       topic_name: topicName,
       updated_at: new Date().toISOString(),
@@ -285,10 +292,30 @@ async function registerWatch(accessToken: string) {
   );
 
   return {
-    historyId,
+    historyId: prev?.last_history_id || historyId,
+    watchHistoryId: historyId,
     expiration: watchExpiration,
     topicName,
   };
+}
+
+/** Renew if missing expiration or within `withinHours` of expiry (default 48h). */
+async function maybeRenewWatch(accessToken: string, withinHours = 48) {
+  const mailbox = Deno.env.get('GMAIL_USER')?.trim() || 'me';
+  const sb = adminClient();
+  const { data: state } = await sb
+    .from('gmail_sync_state')
+    .select('watch_expiration')
+    .eq('mailbox', mailbox)
+    .maybeSingle();
+
+  const exp = state?.watch_expiration ? new Date(state.watch_expiration).getTime() : 0;
+  const dueAt = Date.now() + withinHours * 60 * 60 * 1000;
+  if (exp && exp > dueAt) {
+    return { renewed: false, expiration: state?.watch_expiration ?? null };
+  }
+  const watch = await registerWatch(accessToken);
+  return { renewed: true, ...watch };
 }
 
 async function syncFromHistory(accessToken: string, incomingHistoryId?: string) {
@@ -475,9 +502,16 @@ Deno.serve(async (req) => {
     const action = url.searchParams.get('action');
     const accessToken = await getAccessToken();
 
-    if (action === 'watch') {
+    // Force renew (cron / manual)
+    if (action === 'watch' || action === 'renew') {
       const result = await registerWatch(accessToken);
       return json({ ok: true, watch: result });
+    }
+
+    // Renew only if expiring soon
+    if (action === 'renew-if-needed') {
+      const result = await maybeRenewWatch(accessToken, 48);
+      return json({ ok: true, ...result });
     }
 
     const body = (await req.json()) as PubSubPush;
@@ -489,11 +523,20 @@ Deno.serve(async (req) => {
     const historyId = decoded?.historyId ? String(decoded.historyId) : undefined;
     const result = await syncFromHistory(accessToken, historyId);
 
+    // Keep watch alive while mail traffic exists
+    let renew: Awaited<ReturnType<typeof maybeRenewWatch>> | null = null;
+    try {
+      renew = await maybeRenewWatch(accessToken, 48);
+    } catch (e) {
+      console.error('watch renew skipped', e);
+    }
+
     return json({
       ok: true,
       emailAddress: decoded?.emailAddress ?? null,
       historyId: historyId ?? null,
       result,
+      watch: renew,
     });
   } catch (e) {
     console.error(e);

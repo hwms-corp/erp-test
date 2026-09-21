@@ -84,10 +84,15 @@ npx.cmd supabase functions deploy gmail-watch --no-verify-jwt
 4. 엔드포인트: 위 함수 URL
 5. 구독 ID 예: `gmail-push-sub`
 
-### Watch 등록 (최초 1회, 이후 ~7일마다 갱신)
+### Watch 등록 (최초 1회, 이후 자동 갱신)
 ```bash
 curl -X POST "https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/gmail-watch?action=watch"
 ```
+
+자동 갱신:
+- 메일 push 처리 시 만료 48시간 이내면 자동 `users.watch` 재등록
+- GitHub Actions `.github/workflows/gmail-watch-renew.yml` — 매일 03:00 UTC에 `?action=renew` 호출
+- 수동: `?action=renew` 또는 `?action=renew-if-needed`
 
 ### 테스트
 1. 수신 메일함으로 테스트 메일 발송
