@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, X } from 'lucide-react';
-import { Pagination, usePagination } from '@/components/Pagination';
+import { motion } from 'motion/react';
+import { Mail, RefreshCw, Inbox } from 'lucide-react';
+import { Pagination } from '@/components/Pagination';
 import { useMail } from '@/hooks/useMail';
 import { supabase } from '@/lib/supabase';
 import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
@@ -30,71 +30,35 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
   failed: 'bg-red-50 text-red-700',
 };
 
-/** 알림 카드 약 높이 + gap — 보이는 칸 3개 */
-const TOAST_VISIBLE = 3;
-const TOAST_CARD_H = 78;
-const TOAST_GAP = 8;
-
-type MailToast = {
-  key: string;
-  mailId: number;
-  subject: string;
-  fromAddr?: string;
-};
+const PAGE_SIZE = 20;
 
 export function MailInboxView() {
   const { fetchMails } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   /** 세션 중 막 도착한 메일 — 짧은 arrive 애니메이션용 */
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
-  const [toasts, setToasts] = useState<MailToast[]>([]);
-  const toastScrollRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const status = searchParams.get('status') || '';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
-
-  const dismissToast = useCallback((key: string) => {
-    setToasts(prev => prev.filter(t => t.key !== key));
-  }, []);
-
-  const pushToast = useCallback((mailId: number, subject?: string | null, fromAddr?: string | null) => {
-    setToasts(prev => {
-      if (prev.some(t => t.mailId === mailId)) return prev;
-      return [...prev, {
-        key: `${mailId}-${Date.now()}`,
-        mailId,
-        subject: subject?.trim() || '제목 없는 메일',
-        fromAddr: fromAddr || undefined,
-      }];
-    });
-  }, []);
-
-  const markArrived = useCallback((id: number, subject?: string | null, fromAddr?: string | null) => {
-    setJustArrivedIds(prev => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    pushToast(id, subject, fromAddr);
-    window.setTimeout(() => {
-      setJustArrivedIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }, 1400);
-  }, [pushToast]);
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
-    const { data } = await fetchMails({ status: status || undefined, q: q || undefined });
+    const { data, count } = await fetchMails({
+      status: status || undefined,
+      q: q || undefined,
+      page,
+      pageSize: PAGE_SIZE,
+    });
     setMails(data ?? []);
+    setTotalItems(count ?? 0);
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, status, q]);
+  }, [fetchMails, status, q, page]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -106,7 +70,22 @@ export function MailInboxView() {
         { event: 'INSERT', schema: 'public', table: 'mail_messages' },
         payload => {
           const row = payload.new as MailMessage;
-          if (row?.id != null) markArrived(Number(row.id), row.subject, row.from_addr);
+          if (row?.id != null) {
+            const id = Number(row.id);
+            setJustArrivedIds(prev => {
+              const next = new Set(prev);
+              next.add(id);
+              return next;
+            });
+            window.setTimeout(() => {
+              setJustArrivedIds(prev => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+              });
+            }, 1400);
+          }
+          // 1페이지면 새 메일 반영, 다른 페이지면 count만 갱신되도록 reload
           void load({ silent: true });
         },
       )
@@ -125,87 +104,15 @@ export function MailInboxView() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load, markArrived]);
-
-  // 새 알림이 붙으면 맨 아래(최신)가 보이도록 스크롤
-  useEffect(() => {
-    const el = toastScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    });
-  }, [toasts.length]);
-
-  const { totalItems, totalPages, pageSize, getPage } = usePagination(mails, 15);
-  const paged = getPage(page);
+  }, [load]);
 
   const statuses = useMemo(
     () => ['', 'received', 'review_required', 'ready_auto', 'registered', 'rejected', 'failed'],
     [],
   );
 
-  const toastMaxH = TOAST_VISIBLE * TOAST_CARD_H + (TOAST_VISIBLE - 1) * TOAST_GAP;
-
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 relative">
-      {/* 우하단 알림 스택: 아래=최신, 위=오래됨. 3칸 초과 시 스크롤 */}
-      {toasts.length > 0 && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-50 w-[22rem] max-w-[calc(100vw-2rem)]">
-          <div
-            ref={toastScrollRef}
-            className="mail-toast-scroll pointer-events-auto flex flex-col justify-end gap-2 overflow-y-auto overscroll-contain pr-0.5"
-            style={{ maxHeight: toastMaxH }}
-          >
-            <AnimatePresence mode="popLayout" initial={false}>
-              {toasts.map(t => (
-                <motion.div
-                  key={t.key}
-                  layout
-                  initial={{ opacity: 0, y: 28, filter: 'blur(2px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, y: -18, filter: 'blur(2px)' }}
-                  transition={{
-                    layout: { type: 'spring', stiffness: 420, damping: 32 },
-                    opacity: { duration: 0.28 },
-                    y: { type: 'spring', stiffness: 380, damping: 28 },
-                  }}
-                  className="shrink-0 overflow-hidden rounded-xl border border-orange-200/80 bg-white/95 shadow-lg backdrop-blur-sm"
-                  style={{ minHeight: TOAST_CARD_H - 6 }}
-                >
-                  <div className="flex items-start gap-2 px-4 py-3">
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 flex items-start gap-2 text-left hover:opacity-90"
-                      onClick={() => {
-                        dismissToast(t.key);
-                        navigate(`/mail/${t.mailId}`);
-                      }}
-                    >
-                      <Mail className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-orange-700">새 메일 도착</p>
-                        <p className="text-xs text-slate-800 mt-0.5 truncate font-medium">{t.subject}</p>
-                        {t.fromAddr && (
-                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">{t.fromAddr}</p>
-                        )}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
-                      aria-label="알림 닫기"
-                      onClick={() => dismissToast(t.key)}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -273,10 +180,10 @@ export function MailInboxView() {
             {loading && (
               <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">로딩 중…</td></tr>
             )}
-            {!loading && paged.length === 0 && (
+            {!loading && mails.length === 0 && (
               <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
-            {paged.map(m => {
+            {!loading && mails.map(m => {
               const unread = m.is_read !== true;
               const justArrived = justArrivedIds.has(m.id);
               return (
@@ -334,7 +241,7 @@ export function MailInboxView() {
           return n;
         })}
         totalItems={totalItems}
-        pageSize={pageSize}
+        pageSize={PAGE_SIZE}
       />
     </motion.div>
   );

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthContext, useAuthProvider } from '@/hooks/useAuth';
+import { AuthContext, useAuth, useAuthProvider } from '@/hooks/useAuth';
 import { Layout } from '@/components/Layout';
 import { LoginView } from '@/views/LoginView';
 import { PartnerListView } from '@/views/PartnerListView';
@@ -15,11 +15,12 @@ import { POSearchView } from '@/views/POSearchView';
 import { ReceivingView } from '@/views/ReceivingView';
 import { DeliveryView } from '@/views/DeliveryView';
 import { DashboardView } from '@/views/DashboardView';
+import { MailToastProvider } from '@/components/MailToastProvider';
 import { MailInboxView } from '@/views/MailInboxView';
 import { MailReviewView } from '@/views/MailReviewView';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuthProvider();
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -33,7 +34,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>;
+  return <MailToastProvider>{children}</MailToastProvider>;
 }
 
 export default function App() {

@@ -7,20 +7,37 @@ import type { Partner, MaterialLine } from '@/types';
 import { today } from '@/types';
 
 export function useMail() {
-  const fetchMails = useCallback(async (filters?: { status?: string; q?: string }) => {
+  const fetchMails = useCallback(async (filters?: {
+    status?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const page = Math.max(1, filters?.page ?? 1);
+    const pageSize = Math.max(1, filters?.pageSize ?? 20);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
     let query = supabase
       .from('mail_messages')
-      .select('*')
+      .select('*', { count: 'exact' })
       .is('deleted_at', null)
-      .order('received_at', { ascending: false });
+      .order('received_at', { ascending: false })
+      .range(from, to);
 
     if (filters?.status) query = query.eq('process_status', filters.status);
     if (filters?.q) {
       query = query.or(`subject.ilike.%${filters.q}%,from_addr.ilike.%${filters.q}%,snippet.ilike.%${filters.q}%`);
     }
 
-    const { data, error } = await query;
-    return { data: data as MailMessage[] | null, error };
+    const { data, error, count } = await query;
+    return {
+      data: data as MailMessage[] | null,
+      error,
+      count: count ?? 0,
+      page,
+      pageSize,
+    };
   }, []);
 
   const fetchMail = useCallback(async (id: number) => {
