@@ -1,1 +1,18 @@
 @import "tailwindcss";
+
+@keyframes mail-row-arrive {
+  0% {
+    background-color: rgb(255 247 237); /* orange-50 */
+    box-shadow: inset 3px 0 0 0 rgb(249 115 22); /* orange-500 */
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 0 transparent;
+  }
+}
+
+.mail-row-new {
+  animation: mail-row-arrive 4s ease-out;
+  box-shadow: inset 3px 0 0 0 rgb(249 115 22);
+  background-color: rgb(255 247 237);
+}
