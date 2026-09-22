@@ -13,7 +13,7 @@
     "git:push:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-all.ps1",
     "ai:poc:generate": "tsx scripts/ai-poc/generate-ground-truth.mts",
     "ai:poc:eval": "tsx scripts/ai-poc/evaluate.mts",
-    "ai:api:dev": "npm --prefix ai-doc-api run dev"
+    "ai:api:dev": "npm --prefix ../mail-ai-api run dev"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",

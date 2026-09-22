@@ -10,15 +10,17 @@
 | `src/hooks/useMail.ts` | 메일 CRUD + AI 파이프라인 + 견적 등록 |
 | `src/views/MailInboxView.tsx` | ERP 메일함 |
 | `src/views/MailReviewView.tsx` | 원문 vs 추출 검토 + draft 등록 |
-| `ai-doc-api/` | 월구독형 Document Intelligence API |
 | `scripts/ai-poc/` | Ground Truth 50건 + KPI 평가 |
+| `../mail-ai-api/` (별도 저장소) | Document Intelligence API — https://github.com/kby920909/mail-ai-api |
 | `supabase/migrations/017_ai_mail.sql` | 메일함 테이블 |
-| `supabase/functions/gmail-watch/` | Gmail Pub/Sub push 수신 초안 |
+| `supabase/functions/gmail-watch/` | Gmail Pub/Sub push 수신 |
+
+> AI API는 ERP와 분리되어 있습니다. 로컬 경로 예: `D:\Cursor\mail-ai-api`
 
 ## 로컬 실행
 
 1. Supabase에 `017_ai_mail.sql` 실행
-2. AI API `.env` (`ai-doc-api/.env`):
+2. AI API `.env` (`mail-ai-api/.env`):
 ```
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
@@ -27,7 +29,7 @@ AI_DOC_DEMO_API_KEY=aidoc_demo_haewon_dev_key_change_me
 ```
 3. AI API:
 ```bash
-cd ai-doc-api && npm install && npm run dev
+cd D:\Cursor\mail-ai-api && npm install && npm run dev
 ```
    - 기동 로그에 `OpenAI: enabled` 가 보이면 ChatGPT 연동 성공
 4. ERP `.env`에 추가:
@@ -35,7 +37,7 @@ cd ai-doc-api && npm install && npm run dev
 VITE_AI_DOC_API_URL=http://localhost:4040
 VITE_AI_DOC_API_KEY=aidoc_demo_haewon_dev_key_change_me
 ```
-5. `npm run dev` 후 사이드바 **AI 메일함** → **데모 메일+AI**
+5. ERP `npm run dev` 후 사이드바 **AI 메일함**
 ## PoC KPI
 
 ```bash
@@ -101,14 +103,15 @@ curl -X POST "https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/gmail-watc
 4. (지금은) 수동 AI 재실행 → 검토 → 견적 등록
    - AI secrets + 공인 `AI_DOC_API_URL` 있으면 수신 시 자동 분류/추출
 
-## ai-doc-api 서버 배포 (Vercel ERP용)
+## mail-ai-api 서버 배포 (Vercel ERP용)
 
-ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-doc-api`를 공인 서버에 배포하세요.
+ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. 별도 저장소 `mail-ai-api`를 공인 서버에 배포하세요.  
+저장소: https://github.com/kby920909/mail-ai-api · 로컬: `D:\Cursor\mail-ai-api`
 
 ### Railway (권장)
 1. https://railway.app 가입/로그인
-2. **New Project → Deploy from GitHub** (이 레포 연결)
-3. Root Directory / Watch path: `ai-doc-api`
+2. **New Project → Deploy from GitHub** → `kby920909/mail-ai-api` 연결
+3. Root Directory: 저장소 루트
 4. Variables에 설정:
    ```
    OPENAI_API_KEY=sk-...
@@ -117,7 +120,7 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-d
    PORT=4040
    HOST=0.0.0.0
    ```
-5. 배포 후 Public URL 발급 (예: `https://ai-doc-api-xxxx.up.railway.app`)
+5. 배포 후 Public URL 발급 (예: `https://mail-ai-api-xxxx.up.railway.app`)
 6. 헬스: `https://.../health` → `{ ok: true }`
 
 ### 배포 후 연결
@@ -134,7 +137,7 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-d
 3. ERP 재배포
 
 ### 실서버에서 되는 것 / 안 되는 것
-| 기능 | ai-doc-api 서버 없이 | 서버 배포 후 |
+| 기능 | mail-ai-api 서버 없이 | 서버 배포 후 |
 |------|---------------------|-------------|
 | Gmail → AI 메일함 수신 | O (Edge+Supabase) | O |
 | 메일 목록/원문 보기 | O | O |
@@ -150,7 +153,7 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-d
 수신 메일 본문뿐 아니라 PDF·이미지 첨부를 Gmail에서 받아 AI API로 넘깁니다.
 
 - Edge `gmail-watch`: 첨부 다운로드 → `content_base64`로 classify/extract 요청
-- `ai-doc-api`: 이미지는 Vision(`image_url`), PDF는 file modality (실패 시 본문만 폴백)
+- `mail-ai-api`: 이미지는 Vision(`image_url`), PDF는 file modality (실패 시 본문만 폴백)
 - 한도: 파일 최대 5개, 개당 약 8MB
 
-배포 시 **Railway(ai-doc-api) + `gmail-watch` 둘 다** 갱신해야 OCR이 동작합니다.
+배포 시 **Railway(`mail-ai-api`) + `gmail-watch` 둘 다** 갱신해야 OCR이 동작합니다.
