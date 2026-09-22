@@ -13,6 +13,7 @@
     "git:push:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/push-all.ps1",
     "ai:poc:generate": "tsx scripts/ai-poc/generate-ground-truth.mts",
     "ai:poc:eval": "tsx scripts/ai-poc/evaluate.mts",
+    "ai:poc:eval:api": "tsx scripts/ai-poc/evaluate-api.mts",
     "ai:api:dev": "npm --prefix ../mail-ai-api run dev"
   },
   "dependencies": {

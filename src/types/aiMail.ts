@@ -160,6 +160,8 @@ export interface MailMessage {
   matched_partner_id: number | null;
   registered_order_id: number | null;
   error_message: string | null;
+  /** 자동등록 스킵/실패·검토 사유 (한글). AI error_message와 별도 */
+  status_reason?: string | null;
   is_read: boolean;
   read_at: string | null;
   created_at: string;

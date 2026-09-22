@@ -513,6 +513,11 @@ export function MailInboxView() {
                     <span className="tabular-nums whitespace-nowrap">{formatReceivedAtKst(m.received_at)}</span>
                     {conf && <span className="tabular-nums">신뢰도 {conf}</span>}
                   </div>
+                  {m.status_reason && (
+                    <p className="mt-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 break-words">
+                      {m.status_reason}
+                    </p>
+                  )}
                 </button>
               </div>
             </div>
@@ -590,9 +595,16 @@ export function MailInboxView() {
                     {formatReceivedAtKst(m.received_at)}
                   </td>
                   <td className="px-2 py-1.5 align-middle">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
-                      {STATUS_LABEL[m.process_status]}
-                    </span>
+                    <div className="min-w-0">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
+                        {STATUS_LABEL[m.process_status]}
+                      </span>
+                      {m.status_reason && (
+                        <p className="mt-1 text-[11px] text-amber-700 leading-snug line-clamp-2" title={m.status_reason}>
+                          {m.status_reason}
+                        </p>
+                      )}
+                    </div>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-middle">
                     {m.extraction?.overall_confidence != null

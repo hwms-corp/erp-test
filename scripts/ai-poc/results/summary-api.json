@@ -1,0 +1,12 @@
+{
+  "engine": "mail-ai-api",
+  "api_base": "https://mail-ai-api-production-5245.up.railway.app",
+  "evaluated_at": "2026-09-22T08:26:59.218Z",
+  "total": 50,
+  "failed_calls": 2,
+  "classify_accuracy": 1,
+  "field_exact_match_avg": 0.75,
+  "line_item_accuracy_avg": 1,
+  "source_filled_rate_avg": 1,
+  "overall_confidence_avg": 0.8822916666666663
+}

@@ -297,6 +297,16 @@ export function MailReviewView() {
       </div>
 
       {msg && <div className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 break-words">{msg}</div>}
+      {mail.status_reason && (
+        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 break-words">
+          <span className="font-medium">처리 사유:</span> {mail.status_reason}
+        </div>
+      )}
+      {mail.error_message && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl px-3 py-2 break-words">
+          <span className="font-medium">오류:</span> {mail.error_message}
+        </div>
+      )}
 
       {/* 상단: 본문 | KV */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 items-start">

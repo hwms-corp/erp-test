@@ -71,11 +71,17 @@ export function formatBytes(n: number | null | undefined): string {
 export function isOcrCandidate(filename: string, mime: string | null | undefined): boolean {
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();
+  if (/\.(zip|exe|dll|bat|cmd|msi|js|vbs)$/i.test(f)) return false;
   return (
     m.includes('pdf') ||
     f.endsWith('.pdf') ||
     m.startsWith('image/') ||
-    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f)
+    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f) ||
+    /\.(docx|xlsx|xlsm|xls|doc|eml|txt|csv)$/i.test(f) ||
+    m.includes('spreadsheet') ||
+    m.includes('wordprocessingml') ||
+    m.includes('msword') ||
+    m.includes('officedocument')
   );
 }
 

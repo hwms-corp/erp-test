@@ -194,6 +194,7 @@ async function matchAndMaybeAutoRegister(
     extraction,
     process_status: status,
     error_message: null,
+    status_reason: null as string | null,
   };
 
   if (best && best.score >= MATCH_SAVE_MIN) {
@@ -210,84 +211,126 @@ async function matchAndMaybeAutoRegister(
   const docNo = (extraction.request?.document_no?.value || '').toString().trim();
   const lines = extractionLines(extraction);
 
-  if (
-    autoOn &&
-    status === 'ready_auto' &&
-    best &&
-    best.score >= MATCH_AUTO_MIN &&
-    docNo &&
-    lines.length > 0
-  ) {
-    // 이미 등록된 메일 스킵
-    const { data: existingOrder } = await sb
-      .from('orders')
-      .select('id')
-      .eq('ai_mail_message_id', mailId)
-      .is('deleted_at', null)
-      .maybeSingle();
-
-    if (existingOrder?.id) {
-      patch.process_status = 'registered';
-      patch.registered_order_id = existingOrder.id;
-      patch.matched_partner_id = best.partner_id;
-    } else {
-      const createdBy = await getAutoRegisterCreatedBy(sb, settings?.updated_by);
-      if (!createdBy) {
-        console.warn('auto-register skipped: no created_by user');
-      } else {
-        const orderDate =
-          (extraction.request?.request_date?.value || '').toString().trim() || todayYmd();
-        const { data: order, error: orderErr } = await sb
-          .from('orders')
-          .insert({
-            doc_no: docNo,
-            order_date: orderDate,
-            partner_id: best.partner_id,
-            contact_person:
-              extraction.request?.contact_person?.value
-              ?? extraction.customer?.contact_name?.value
-              ?? null,
-            vessel: extraction.request?.vessel?.value ?? null,
-            status: 'draft',
-            source: 'ai_mail',
-            ai_review_status: 'pending_review',
-            ai_mail_message_id: mailId,
-            created_by: createdBy,
-          })
-          .select('id')
-          .single();
-
-        if (orderErr || !order) {
-          console.error('auto-register order failed', mailId, orderErr);
-        } else {
-          const { error: itemErr } = await sb.from('order_items').insert(
-            lines.map((item, i) => ({
-              order_id: order.id,
-              seq: i + 1,
-              name: item.name,
-              spec: item.spec || null,
-              qty: item.qty,
-              unit: item.unit,
-              price: item.price,
-              remark: item.remark || null,
-            })),
-          );
-          if (itemErr) {
-            console.error('auto-register items failed', mailId, itemErr);
-            await sb.from('orders').update({ deleted_at: new Date().toISOString() }).eq('id', order.id);
-          } else {
-            patch.process_status = 'registered';
-            patch.registered_order_id = order.id;
-            patch.matched_partner_id = best.partner_id;
-            console.log(`AI mail ${mailId} auto-registered order ${order.id}`);
-          }
-        }
-      }
-    }
+  if (status === 'review_required') {
+    patch.status_reason = '자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요';
   }
 
+  if (!autoOn) {
+    if (status === 'ready_auto') {
+      patch.status_reason = '자동등록 꺼짐 — 자동후보만 저장됨';
+    }
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  // autoOn
+  if (status !== 'ready_auto') {
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  if (!best || best.score < MATCH_AUTO_MIN) {
+    patch.status_reason = best
+      ? `거래처 자동매칭 점수 부족 (${Math.round(best.score * 100)}% < ${Math.round(MATCH_AUTO_MIN * 100)}%)`
+      : '거래처 자동매칭 실패 (유사 거래처 없음)';
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  if (!docNo) {
+    patch.status_reason = '자동등록 실패 — 문서번호 없음';
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  if (lines.length === 0) {
+    patch.status_reason = '자동등록 실패 — 추출된 품목 없음';
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  const { data: existingOrder } = await sb
+    .from('orders')
+    .select('id')
+    .eq('ai_mail_message_id', mailId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (existingOrder?.id) {
+    patch.process_status = 'registered';
+    patch.registered_order_id = existingOrder.id;
+    patch.matched_partner_id = best.partner_id;
+    patch.status_reason = null;
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return 'registered';
+  }
+
+  const createdBy = await getAutoRegisterCreatedBy(sb, settings?.updated_by);
+  if (!createdBy) {
+    patch.status_reason = '자동등록 실패 — 등록 사용자(created_by)를 찾을 수 없음';
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  const orderDate =
+    (extraction.request?.request_date?.value || '').toString().trim() || todayYmd();
+  const { data: order, error: orderErr } = await sb
+    .from('orders')
+    .insert({
+      doc_no: docNo,
+      order_date: orderDate,
+      partner_id: best.partner_id,
+      contact_person:
+        extraction.request?.contact_person?.value
+        ?? extraction.customer?.contact_name?.value
+        ?? null,
+      vessel: extraction.request?.vessel?.value ?? null,
+      status: 'draft',
+      source: 'ai_mail',
+      ai_review_status: 'pending_review',
+      ai_mail_message_id: mailId,
+      created_by: createdBy,
+    })
+    .select('id')
+    .single();
+
+  if (orderErr || !order) {
+    console.error('auto-register order failed', mailId, orderErr);
+    const detail = (orderErr as { message?: string } | null)?.message || '알 수 없는 오류';
+    patch.status_reason = `자동등록 실패 — 견적 draft 생성 오류 (${detail.slice(0, 120)})`;
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  const { error: itemErr } = await sb.from('order_items').insert(
+    lines.map((item, i) => ({
+      order_id: order.id,
+      seq: i + 1,
+      name: item.name,
+      spec: item.spec || null,
+      qty: item.qty,
+      unit: item.unit,
+      price: item.price,
+      remark: item.remark || null,
+    })),
+  );
+
+  if (itemErr) {
+    console.error('auto-register items failed', mailId, itemErr);
+    await sb.from('orders').update({ deleted_at: new Date().toISOString() }).eq('id', order.id);
+    const detail = (itemErr as { message?: string } | null)?.message || '알 수 없는 오류';
+    patch.status_reason = `자동등록 실패 — 품목 저장 오류, draft 롤백됨 (${detail.slice(0, 120)})`;
+    await sb.from('mail_messages').update(patch).eq('id', mailId);
+    return String(patch.process_status);
+  }
+
+  patch.process_status = 'registered';
+  patch.registered_order_id = order.id;
+  patch.matched_partner_id = best.partner_id;
+  patch.status_reason = null;
+  console.log(`AI mail ${mailId} auto-registered order ${order.id}`);
   await sb.from('mail_messages').update(patch).eq('id', mailId);
-  return String(patch.process_status);
+  return 'registered';
 }
 
 function json(data: unknown, status = 200) {
@@ -434,11 +477,17 @@ function collectAttachmentMeta(payload: GmailPayload | undefined) {
 function isOcrCandidate(filename: string, mime: string | null): boolean {
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();
+  if (/\.(zip|exe|dll|bat|cmd|msi|js|vbs)$/i.test(f)) return false;
   return (
     m.includes('pdf') ||
     f.endsWith('.pdf') ||
     m.startsWith('image/') ||
-    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f)
+    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f) ||
+    /\.(docx|xlsx|xlsm|xls|doc|eml|txt|csv)$/i.test(f) ||
+    m.includes('spreadsheet') ||
+    m.includes('wordprocessingml') ||
+    m.includes('msword') ||
+    m.includes('officedocument')
   );
 }
 
