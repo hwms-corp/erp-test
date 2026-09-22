@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2 } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,6 +17,41 @@ function formatReceivedAtKst(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return '—';
   const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
   return s.replace(/-/g, '/');
+}
+
+/** 납품관리 세금계산서 미발행과 동일한 커스텀 체크박스 */
+function MailSelectCheckbox({
+  checked,
+  indeterminate = false,
+  onToggle,
+  ariaLabel,
+  className = '',
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onToggle: () => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={indeterminate ? 'mixed' : checked}
+      aria-label={ariaLabel}
+      onClick={e => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
+        checked || indeterminate
+          ? 'bg-violet-600 border-violet-600 text-white'
+          : 'bg-white border-violet-300 text-transparent hover:border-violet-500'
+      } ${className}`}
+    >
+      {indeterminate ? <Minus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+    </button>
+  );
 }
 
 const STATUS_LABEL: Record<MailProcessStatus, string> = {
@@ -413,15 +448,11 @@ export function MailInboxView() {
       {/* 모바일·태블릿: 카드 리스트 / 데스크톱(lg+): 테이블 */}
       <div className="lg:hidden space-y-2">
         <div className="flex items-center gap-2 px-1">
-          <input
-            type="checkbox"
+          <MailSelectCheckbox
             checked={allPageSelected}
-            ref={el => {
-              if (el) el.indeterminate = somePageSelected && !allPageSelected;
-            }}
-            onChange={toggleSelectAll}
-            aria-label="현재 페이지 전체 선택"
-            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            indeterminate={somePageSelected && !allPageSelected}
+            onToggle={toggleSelectAll}
+            ariaLabel="현재 페이지 전체 선택"
           />
           <span className="text-xs text-slate-500">전체 선택</span>
         </div>
@@ -452,13 +483,11 @@ export function MailInboxView() {
               }`}
             >
               <div className="flex items-start gap-2.5">
-                <input
-                  type="checkbox"
+                <MailSelectCheckbox
                   checked={checked}
-                  onChange={() => toggleSelectOne(m.id)}
-                  aria-label={`${m.subject || '메일'} 선택`}
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
-                  onClick={e => e.stopPropagation()}
+                  onToggle={() => toggleSelectOne(m.id)}
+                  ariaLabel={`${m.subject || '메일'} 선택`}
+                  className="mt-0.5"
                 />
                 <button
                   type="button"
@@ -492,35 +521,33 @@ export function MailInboxView() {
       </div>
 
       {/* 데스크톱: 테이블 */}
-      <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
+      <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="w-full text-sm table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
-              <th className="px-2 py-3 w-10 text-center">
-                <input
-                  type="checkbox"
-                  checked={allPageSelected}
-                  ref={el => {
-                    if (el) el.indeterminate = somePageSelected && !allPageSelected;
-                  }}
-                  onChange={toggleSelectAll}
-                  aria-label="현재 페이지 전체 선택"
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
+              <th className="px-2 py-2 w-11 text-center">
+                <div className="flex justify-center">
+                  <MailSelectCheckbox
+                    checked={allPageSelected}
+                    indeterminate={somePageSelected && !allPageSelected}
+                    onToggle={toggleSelectAll}
+                    ariaLabel="현재 페이지 전체 선택"
+                  />
+                </div>
               </th>
-              <th className="px-3 py-3 w-[10.5rem] whitespace-nowrap">수신</th>
-              <th className="px-4 py-3">제목</th>
-              <th className="px-4 py-3 w-[11rem]">발신</th>
-              <th className="px-4 py-3 w-[6.5rem]">상태</th>
-              <th className="px-4 py-3 w-[4.5rem] text-right">신뢰도</th>
+              <th className="px-3 py-2">제목</th>
+              <th className="px-2 py-2 w-[16%]">발신자</th>
+              <th className="px-2 py-2 w-[10.5rem] whitespace-nowrap">수신시각</th>
+              <th className="px-2 py-2 w-[5.75rem]">상태</th>
+              <th className="px-2 py-2 w-[4.25rem] text-right">신뢰도</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">로딩 중…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && mails.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">메일이 없습니다.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {!loading && mails.map(m => {
               const unread = m.is_read !== true;
@@ -534,22 +561,16 @@ export function MailInboxView() {
                   }`}
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
-                  <td
-                    className="px-2 py-3 text-center"
-                    onClick={e => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSelectOne(m.id)}
-                      aria-label={`${m.subject || '메일'} 선택`}
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
+                  <td className="px-2 py-1.5 text-center align-middle">
+                    <div className="flex justify-center">
+                      <MailSelectCheckbox
+                        checked={checked}
+                        onToggle={() => toggleSelectOne(m.id)}
+                        ariaLabel={`${m.subject || '메일'} 선택`}
+                      />
+                    </div>
                   </td>
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap tabular-nums text-[13px]">
-                    {formatReceivedAtKst(m.received_at)}
-                  </td>
-                  <td className={`px-4 py-3 ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
+                  <td className={`px-3 py-1.5 align-middle ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                     <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
                       <Mail className={`w-4 h-4 shrink-0 ${unread ? 'text-orange-500' : 'text-slate-400'}`} />
                       {unread && (
@@ -560,17 +581,20 @@ export function MailInboxView() {
                       <span className="truncate">{m.subject || '(제목 없음)'}</span>
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-2 py-1.5 text-slate-600 align-middle">
                     <span className="block truncate" title={m.from_addr || undefined}>
                       {m.from_addr || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
+                  <td className="px-2 py-1.5 text-slate-500 whitespace-nowrap tabular-nums text-[13px] align-middle">
+                    {formatReceivedAtKst(m.received_at)}
+                  </td>
+                  <td className="px-2 py-1.5 align-middle">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
                       {STATUS_LABEL[m.process_status]}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-600">
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-middle">
                     {m.extraction?.overall_confidence != null
                       ? `${Math.round(m.extraction.overall_confidence * 100)}%`
                       : m.classify_confidence != null

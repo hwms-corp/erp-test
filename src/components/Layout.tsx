@@ -35,6 +35,7 @@ export function Layout() {
   const roleColor = role ? ROLE_COLORS[role] : { bg: 'bg-slate-50', text: 'text-slate-700' };
   const breadcrumb = getBreadcrumb(location.pathname);
   const isDashboard = location.pathname === '/dashboard';
+  const isMail = location.pathname.startsWith('/mail');
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -80,7 +81,7 @@ export function Layout() {
         </header>
 
         <div className={`flex-1 overflow-y-auto ${isDashboard ? 'p-2 sm:p-3' : 'p-3 sm:p-6'}`}>
-          <div className={`mx-auto w-full ${isDashboard ? 'max-w-none' : 'max-w-7xl'}`}>
+          <div className={`mx-auto w-full ${isDashboard || isMail ? 'max-w-none' : 'max-w-7xl'}`}>
             <Outlet />
           </div>
         </div>
