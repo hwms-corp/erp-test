@@ -70,6 +70,23 @@ export function useMail() {
     return { data: data as MailMessage | null, error };
   }, []);
 
+  /** 메일함 soft-delete (deleted_at) */
+  const softDeleteMails = useCallback(async (ids: number[]) => {
+    const unique = [...new Set(ids.filter(id => Number.isFinite(id) && id > 0))];
+    if (!unique.length) {
+      return { error: { message: '삭제할 메일을 선택하세요.' } as { message: string }, count: 0 };
+    }
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .update({ deleted_at: now, updated_at: now })
+      .in('id', unique)
+      .is('deleted_at', null)
+      .select('id');
+    if (error) return { error, count: 0 };
+    return { error: null, count: data?.length ?? 0 };
+  }, []);
+
   /** Gmail Push / 수동 수집으로 들어온 메일 저장 (idempotent by gmail_message_id) */
   const upsertMail = useCallback(async (payload: {
     gmail_message_id: string;
@@ -361,6 +378,7 @@ export function useMail() {
     fetchMail,
     fetchAttachments,
     markMailRead,
+    softDeleteMails,
     upsertMail,
     runAiPipeline,
     saveExtraction,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2 } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,7 +9,15 @@ import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
 import { supabase } from '@/lib/supabase';
 import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
-import { formatYmdSlash } from '@/types';
+
+/** 한국시간 YYYY/MM/DD HH:mm:ss (개행 없음) */
+function formatReceivedAtKst(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
+  return s.replace(/-/g, '/');
+}
 
 const STATUS_LABEL: Record<MailProcessStatus, string> = {
   received: '수신',
@@ -53,11 +61,13 @@ const AI_STATUS_TONE: Record<AiHealthStatus, string> = {
 
 export function MailInboxView() {
   const { user } = useAuth();
-  const { fetchMails, fetchMailAiSettings, updateMailAiSettings } = useMail();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [autoRegister, setAutoRegister] = useState(false);
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -107,11 +117,18 @@ export function MailInboxView() {
     });
     setMails(data ?? []);
     setTotalItems(count ?? 0);
+    setSelectedIds(prev => {
+      const alive = new Set((data ?? []).map(m => m.id));
+      const next = new Set<number>();
+      prev.forEach(id => { if (alive.has(id)) next.add(id); });
+      return next;
+    });
     if (!opts?.silent) setLoading(false);
   }, [fetchMails, status, q, page]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
+  useEffect(() => { setSelectedIds(new Set()); }, [status, q, page]);
 
   useEffect(() => {
     const channel = supabase
@@ -215,6 +232,51 @@ export function MailInboxView() {
     [],
   );
 
+  const pageIds = useMemo(() => mails.map(m => m.id), [mails]);
+  const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
+  const somePageSelected = pageIds.some(id => selectedIds.has(id));
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (allPageSelected) return new Set();
+      return new Set(pageIds);
+    });
+  };
+
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const deleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length || deleteBusy) return;
+    if (!confirm(`선택한 메일 ${ids.length}건을 삭제하시겠습니까?\n목록에서 숨겨지며 복구는 관리자 DB 작업이 필요합니다.`)) {
+      return;
+    }
+    setDeleteBusy(true);
+    const { error, count } = await softDeleteMails(ids);
+    setDeleteBusy(false);
+    if (error) {
+      alert('삭제 실패: ' + (error.message || '오류가 발생했습니다.'));
+      return;
+    }
+    setSelectedIds(new Set());
+    if (count > 0 && mails.length === count && page > 1) {
+      setSearchParams(prev => {
+        const n = new URLSearchParams(prev);
+        n.set('page', String(page - 1));
+        return n;
+      });
+      return;
+    }
+    await load();
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 relative">
       {showAiModal && (
@@ -313,30 +375,53 @@ export function MailInboxView() {
             {s ? STATUS_LABEL[s as MailProcessStatus] : '전체'}
           </button>
         ))}
-        <input
-          className="ml-auto px-3 py-2 border border-slate-300 rounded-lg text-sm w-56"
-          placeholder="제목/발신자 검색"
-          defaultValue={q}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              const v = (e.target as HTMLInputElement).value.trim();
-              setSearchParams(prev => {
-                const n = new URLSearchParams(prev);
-                if (v) n.set('q', v); else n.delete('q');
-                n.set('page', '1');
-                return n;
-              });
-            }
-          }}
-        />
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            disabled={selectedIds.size === 0 || deleteBusy}
+            onClick={() => void deleteSelected()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="w-4 h-4" />
+            메일선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </button>
+          <input
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-56"
+            placeholder="제목/발신자 검색"
+            defaultValue={q}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const v = (e.target as HTMLInputElement).value.trim();
+                setSearchParams(prev => {
+                  const n = new URLSearchParams(prev);
+                  if (v) n.set('q', v); else n.delete('q');
+                  n.set('page', '1');
+                  return n;
+                });
+              }
+            }}
+          />
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <table className="w-full text-sm table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
-              <th className="px-4 py-3 w-[7.5rem]">수신</th>
-              <th className="px-4 py-3 w-[42%]">제목</th>
+              <th className="px-2 py-3 w-10 text-center">
+                <input
+                  type="checkbox"
+                  checked={allPageSelected}
+                  ref={el => {
+                    if (el) el.indeterminate = somePageSelected && !allPageSelected;
+                  }}
+                  onChange={toggleSelectAll}
+                  aria-label="현재 페이지 전체 선택"
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+              </th>
+              <th className="px-3 py-3 w-[10.5rem] whitespace-nowrap">수신</th>
+              <th className="px-4 py-3 w-[40%]">제목</th>
               <th className="px-4 py-3 w-[11rem]">발신</th>
               <th className="px-4 py-3 w-[6.5rem]">상태</th>
               <th className="px-4 py-3 w-[4.5rem] text-right">신뢰도</th>
@@ -344,14 +429,15 @@ export function MailInboxView() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">로딩 중…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && mails.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">메일이 없습니다.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {!loading && mails.map(m => {
               const unread = m.is_read !== true;
               const justArrived = justArrivedIds.has(m.id);
+              const checked = selectedIds.has(m.id);
               return (
                 <tr
                   key={m.id}
@@ -360,8 +446,20 @@ export function MailInboxView() {
                   }`}
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
-                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
-                    {formatYmdSlash((m.received_at || '').slice(0, 10))}
+                  <td
+                    className="px-2 py-3 text-center"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleSelectOne(m.id)}
+                      aria-label={`${m.subject || '메일'} 선택`}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap tabular-nums text-[13px]">
+                    {formatReceivedAtKst(m.received_at)}
                   </td>
                   <td className={`px-4 py-3 ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                     <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
