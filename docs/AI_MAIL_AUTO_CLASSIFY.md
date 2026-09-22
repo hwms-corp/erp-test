@@ -140,6 +140,8 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. `ai-d
 | 메일 목록/원문 보기 | O | O |
 | 수신 시 자동 분류/추출 | X (`수신`만) | O |
 | 첨부 PDF/이미지 OCR | X | O (Vision + PDF file input) |
+| 거래처 자동 매칭 (추출 직후) | X | O (`matched_partner_id`) |
+| 견적 자동등록 (관리자 스위치) | X | O (기본 OFF, ON 시 draft+검토대기+메일 `견적등록`) |
 | AI 재실행 / 추출 | X (브라우저가 API 못 부름) | O |
 | 견적 등록·검토 | 추출 있으면 O | O |
 

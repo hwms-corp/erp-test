@@ -59,7 +59,12 @@ export function MailReviewView() {
       const { data: partnerList } = await fetchPartners();
       const list = partnerList ?? [];
       setPartners(list);
-      if (data?.extraction && list.length) applyPartnerSuggestions(data.extraction, list);
+      if (data?.matched_partner_id) {
+        const hit = list.find(p => p.id === data.matched_partner_id) ?? null;
+        if (hit) setSelectedPartner(hit);
+      } else if (data?.extraction && list.length) {
+        applyPartnerSuggestions(data.extraction, list);
+      }
     })();
   }, [mailId, fetchMail, fetchAttachments, fetchPartners, markMailRead, suggestPartners]);
 

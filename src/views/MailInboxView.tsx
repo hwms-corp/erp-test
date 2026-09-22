@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, RefreshCw, Inbox } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
+import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
 import { supabase } from '@/lib/supabase';
 import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
@@ -33,19 +34,27 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 const PAGE_SIZE = 20;
 
 export function MailInboxView() {
-  const { fetchMails } = useMail();
+  const { user } = useAuth();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
-  /** 세션 중 막 도착한 메일 — 짧은 arrive 애니메이션용 */
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
+  const [autoRegister, setAutoRegister] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  const isAdmin = user?.role === 'admin';
   const status = searchParams.get('status') || '';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+
+  const loadSettings = useCallback(async () => {
+    const { data } = await fetchMailAiSettings();
+    setAutoRegister(!!data?.auto_register_draft);
+  }, [fetchMailAiSettings]);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -61,6 +70,7 @@ export function MailInboxView() {
   }, [fetchMails, status, q, page]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void loadSettings(); }, [loadSettings]);
 
   useEffect(() => {
     const channel = supabase
@@ -85,7 +95,6 @@ export function MailInboxView() {
               });
             }, 1400);
           }
-          // 1페이지면 새 메일 반영, 다른 페이지면 count만 갱신되도록 reload
           void load({ silent: true });
         },
       )
@@ -99,12 +108,35 @@ export function MailInboxView() {
         { event: 'DELETE', schema: 'public', table: 'mail_messages' },
         () => { void load({ silent: true }); },
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'mail_ai_settings' },
+        payload => {
+          const row = payload.new as { auto_register_draft?: boolean };
+          if (typeof row?.auto_register_draft === 'boolean') {
+            setAutoRegister(row.auto_register_draft);
+          }
+        },
+      )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [load]);
+
+  const toggleAutoRegister = async () => {
+    if (!isAdmin || !user || settingsBusy) return;
+    const next = !autoRegister;
+    setSettingsBusy(true);
+    setAutoRegister(next);
+    const { error } = await updateMailAiSettings(next, user.id);
+    if (error) {
+      setAutoRegister(!next);
+      console.error(error);
+    }
+    setSettingsBusy(false);
+  };
 
   const statuses = useMemo(
     () => ['', 'received', 'review_required', 'ready_auto', 'registered', 'rejected', 'failed'],
@@ -120,13 +152,41 @@ export function MailInboxView() {
           </h2>
           <p className="text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
-        >
-          <RefreshCw className="w-4 h-4" /> 새로고침
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-slate-800">견적 자동등록</p>
+              <p className="text-[11px] text-slate-500">
+                {autoRegister ? '활성 · AI 검토대기로 저장' : '비활성 (기본)'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoRegister}
+              aria-label="견적 자동등록"
+              disabled={!isAdmin || settingsBusy}
+              onClick={() => void toggleAutoRegister()}
+              title={isAdmin ? '관리자만 변경 가능' : '관리자만 변경할 수 있습니다'}
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+                autoRegister ? 'bg-indigo-600' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                  autoRegister ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
+          >
+            <RefreshCw className="w-4 h-4" /> 새로고침
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">

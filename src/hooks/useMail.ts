@@ -299,6 +299,48 @@ export function useMail() {
     matchPartners(extraction, partners),
   []);
 
+  const fetchMailAiSettings = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('mail_ai_settings')
+      .select('id, auto_register_draft, updated_at, updated_by')
+      .eq('id', 1)
+      .maybeSingle();
+    return {
+      data: data as {
+        id: number;
+        auto_register_draft: boolean;
+        updated_at: string;
+        updated_by: number | null;
+      } | null,
+      error,
+    };
+  }, []);
+
+  const updateMailAiSettings = useCallback(async (
+    autoRegisterDraft: boolean,
+    updatedBy: number,
+  ) => {
+    const { data, error } = await supabase
+      .from('mail_ai_settings')
+      .update({
+        auto_register_draft: autoRegisterDraft,
+        updated_at: new Date().toISOString(),
+        updated_by: updatedBy,
+      })
+      .eq('id', 1)
+      .select('id, auto_register_draft, updated_at, updated_by')
+      .single();
+    return {
+      data: data as {
+        id: number;
+        auto_register_draft: boolean;
+        updated_at: string;
+        updated_by: number | null;
+      } | null,
+      error,
+    };
+  }, []);
+
   return {
     fetchMails,
     fetchMail,
@@ -309,5 +351,7 @@ export function useMail() {
     saveExtraction,
     registerAsDraft,
     suggestPartners,
+    fetchMailAiSettings,
+    updateMailAiSettings,
   };
 }

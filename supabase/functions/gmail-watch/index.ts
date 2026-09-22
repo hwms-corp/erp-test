@@ -32,14 +32,262 @@ type GmailPayload = {
   headers?: GmailHeader[];
 };
 
+type FieldVal<T = string | null> = { value?: T | null };
 type CanonicalExtraction = {
   document_type: string;
   language: string;
   overall_confidence: number;
-  customer: { name: { value: string | null } };
-  request: { document_no?: { value: string | null } };
-  items: { product_name: { value: string | null }; quantity: { value: number | null } }[];
+  customer: {
+    name?: FieldVal;
+    contact_name?: FieldVal;
+    email?: FieldVal;
+    tel?: FieldVal;
+    biz_no?: FieldVal;
+    addr?: FieldVal;
+  };
+  request: {
+    document_no?: FieldVal;
+    request_date?: FieldVal;
+    delivery_date?: FieldVal;
+    currency?: FieldVal;
+    vessel?: FieldVal;
+    contact_person?: FieldVal;
+  };
+  items: {
+    product_name?: FieldVal;
+    product_code?: FieldVal;
+    specification?: FieldVal;
+    quantity?: FieldVal<number | null>;
+    unit?: FieldVal;
+    requested_price?: FieldVal<number | null>;
+    remark?: FieldVal;
+  }[];
+  remarks?: FieldVal;
 };
+
+type PartnerRow = {
+  id: number;
+  code: string;
+  name: string;
+  biz_no: string | null;
+  email: string | null;
+  type: string | null;
+  deleted_at: string | null;
+};
+
+type MatchCandidate = {
+  partner_id: number;
+  partner_code: string;
+  partner_name: string;
+  score: number;
+  reason: string;
+};
+
+const MATCH_SAVE_MIN = 0.3;
+const MATCH_AUTO_MIN = 0.5;
+
+function norm(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function matchPartners(extraction: CanonicalExtraction, partners: PartnerRow[], limit = 5): MatchCandidate[] {
+  const name = extraction.customer?.name?.value?.trim() || '';
+  const bizNo = (extraction.customer?.biz_no?.value || '').replace(/\D/g, '');
+  const email = extraction.customer?.email?.value?.trim().toLowerCase() || '';
+  const scored: MatchCandidate[] = [];
+
+  for (const p of partners) {
+    if (p.deleted_at) continue;
+    if (p.type && p.type !== 'sales' && p.type !== 'both') continue;
+    let score = 0;
+    const reasons: string[] = [];
+
+    if (bizNo && (p.biz_no || '').replace(/\D/g, '') === bizNo) {
+      score += 0.6;
+      reasons.push('biz_no exact');
+    }
+    if (email && p.email?.toLowerCase() === email) {
+      score += 0.35;
+      reasons.push('email exact');
+    }
+    if (name) {
+      const pn = norm(p.name);
+      const nn = norm(name);
+      if (pn === nn) {
+        score += 0.5;
+        reasons.push('name exact');
+      } else if (pn.includes(nn) || nn.includes(pn)) {
+        score += 0.3;
+        reasons.push('name partial');
+      }
+    }
+
+    if (score > 0) {
+      scored.push({
+        partner_id: p.id,
+        partner_code: p.code,
+        partner_name: p.name,
+        score: Math.min(1, score),
+        reason: reasons.join(', '),
+      });
+    }
+  }
+
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+function extractionLines(extraction: CanonicalExtraction) {
+  return (extraction.items || [])
+    .filter(it => it.product_name?.value)
+    .map(it => ({
+      name: String(it.product_name?.value || ''),
+      spec: String(it.specification?.value || ''),
+      qty: Number(it.quantity?.value ?? 1) || 1,
+      unit: String(it.unit?.value || 'EA'),
+      price: Number(it.requested_price?.value ?? 0) || 0,
+      remark: String(it.remark?.value || extraction.remarks?.value || ''),
+    }));
+}
+
+function todayYmd(): string {
+  // Asia/Seoul date
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+async function getAutoRegisterCreatedBy(
+  sb: ReturnType<typeof adminClient>,
+  settingsUpdatedBy: number | null | undefined,
+): Promise<number | null> {
+  if (settingsUpdatedBy) return settingsUpdatedBy;
+  const { data } = await sb
+    .from('users')
+    .select('id')
+    .eq('role', 'admin')
+    .eq('active', true)
+    .order('id')
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+/** 추출 후: 거래처 매칭(항상) + 설정 ON이면 draft 자동등록 → registered */
+async function matchAndMaybeAutoRegister(
+  sb: ReturnType<typeof adminClient>,
+  mailId: number,
+  extraction: CanonicalExtraction,
+  status: 'ready_auto' | 'review_required',
+): Promise<string> {
+  const { data: partners } = await sb
+    .from('partners')
+    .select('id, code, name, biz_no, email, type, deleted_at')
+    .is('deleted_at', null);
+
+  const candidates = matchPartners(extraction, (partners || []) as PartnerRow[]);
+  const best = candidates[0];
+  const patch: Record<string, unknown> = {
+    extraction,
+    process_status: status,
+    error_message: null,
+  };
+
+  if (best && best.score >= MATCH_SAVE_MIN) {
+    patch.matched_partner_id = best.partner_id;
+  }
+
+  const { data: settings } = await sb
+    .from('mail_ai_settings')
+    .select('auto_register_draft, updated_by')
+    .eq('id', 1)
+    .maybeSingle();
+
+  const autoOn = !!settings?.auto_register_draft;
+  const docNo = (extraction.request?.document_no?.value || '').toString().trim();
+  const lines = extractionLines(extraction);
+
+  if (
+    autoOn &&
+    status === 'ready_auto' &&
+    best &&
+    best.score >= MATCH_AUTO_MIN &&
+    docNo &&
+    lines.length > 0
+  ) {
+    // 이미 등록된 메일 스킵
+    const { data: existingOrder } = await sb
+      .from('orders')
+      .select('id')
+      .eq('ai_mail_message_id', mailId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (existingOrder?.id) {
+      patch.process_status = 'registered';
+      patch.registered_order_id = existingOrder.id;
+      patch.matched_partner_id = best.partner_id;
+    } else {
+      const createdBy = await getAutoRegisterCreatedBy(sb, settings?.updated_by);
+      if (!createdBy) {
+        console.warn('auto-register skipped: no created_by user');
+      } else {
+        const orderDate =
+          (extraction.request?.request_date?.value || '').toString().trim() || todayYmd();
+        const { data: order, error: orderErr } = await sb
+          .from('orders')
+          .insert({
+            doc_no: docNo,
+            order_date: orderDate,
+            partner_id: best.partner_id,
+            contact_person:
+              extraction.request?.contact_person?.value
+              ?? extraction.customer?.contact_name?.value
+              ?? null,
+            vessel: extraction.request?.vessel?.value ?? null,
+            status: 'draft',
+            source: 'ai_mail',
+            ai_review_status: 'pending_review',
+            ai_mail_message_id: mailId,
+            created_by: createdBy,
+          })
+          .select('id')
+          .single();
+
+        if (orderErr || !order) {
+          console.error('auto-register order failed', mailId, orderErr);
+        } else {
+          const { error: itemErr } = await sb.from('order_items').insert(
+            lines.map((item, i) => ({
+              order_id: order.id,
+              seq: i + 1,
+              name: item.name,
+              spec: item.spec || null,
+              qty: item.qty,
+              unit: item.unit,
+              price: item.price,
+              remark: item.remark || null,
+            })),
+          );
+          if (itemErr) {
+            console.error('auto-register items failed', mailId, itemErr);
+            await sb.from('orders').update({ deleted_at: new Date().toISOString() }).eq('id', order.id);
+          } else {
+            patch.process_status = 'registered';
+            patch.registered_order_id = order.id;
+            patch.matched_partner_id = best.partner_id;
+            console.log(`AI mail ${mailId} auto-registered order ${order.id}`);
+          }
+        }
+      }
+    }
+  }
+
+  await sb.from('mail_messages').update(patch).eq('id', mailId);
+  return String(patch.process_status);
+}
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -311,18 +559,10 @@ async function runAiForMail(
       payload,
     );
     const status = decideProcessStatus(extracted.data);
+    const finalStatus = await matchAndMaybeAutoRegister(sb, mailId, extracted.data, status);
 
-    await sb
-      .from('mail_messages')
-      .update({
-        extraction: extracted.data,
-        process_status: status,
-        error_message: null,
-      })
-      .eq('id', mailId);
-
-    console.log(`AI mail ${mailId} → ${status} (files=${files?.length ?? 0})`);
-    return { status };
+    console.log(`AI mail ${mailId} → ${finalStatus} (files=${files?.length ?? 0})`);
+    return { status: finalStatus };
   } catch (e) {
     const msg = String(e);
     console.error('AI pipeline failed', mailId, msg);
