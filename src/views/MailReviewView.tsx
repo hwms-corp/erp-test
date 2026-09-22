@@ -1,17 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, Search, Sparkles } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText, Search, Sparkles, X } from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
 import { useAuth } from '@/hooks/useAuth';
 import { PartnerSearchModal } from '@/components/PartnerSearchModal';
 import { extractionToMaterialLines } from '@/lib/mailMatching';
-import type { CanonicalExtraction, MailMessage, PartnerMatchCandidate } from '@/types/aiMail';
+import {
+  fetchGmailAttachment,
+  formatBytes,
+  isPreviewableMime,
+} from '@/lib/gmailAttachment';
+import type { CanonicalExtraction, MailAttachment, MailMessage, PartnerMatchCandidate } from '@/types/aiMail';
 import type { Partner } from '@/types';
 import { today } from '@/types';
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+
+type PreviewState = {
+  filename: string;
+  mimeType: string;
+  url: string;
+} | null;
 
 export function MailReviewView() {
   const { id } = useParams();
@@ -22,14 +33,16 @@ export function MailReviewView() {
   const { fetchPartners } = usePartners();
 
   const [mail, setMail] = useState<MailMessage | null>(null);
-  const [attachments, setAttachments] = useState<{ id: number; filename: string }[]>([]);
+  const [attachments, setAttachments] = useState<MailAttachment[]>([]);
   const [extraction, setExtraction] = useState<CanonicalExtraction | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [candidates, setCandidates] = useState<PartnerMatchCandidate[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [showPartnerModal, setShowPartnerModal] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [attBusyId, setAttBusyId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
+  const [preview, setPreview] = useState<PreviewState>(null);
 
   const salesPartners = useMemo(
     () => partners.filter(p => p.type === 'sales' || p.type === 'both'),
@@ -55,7 +68,7 @@ export function MailReviewView() {
         if (updated) setMail(updated);
       }
       const { data: atts } = await fetchAttachments(mailId);
-      setAttachments((atts ?? []).map(a => ({ id: a.id, filename: a.filename })));
+      setAttachments(atts ?? []);
       const { data: partnerList } = await fetchPartners();
       const list = partnerList ?? [];
       setPartners(list);
@@ -72,6 +85,46 @@ export function MailReviewView() {
     () => (extraction ? extractionToMaterialLines(extraction) : []),
     [extraction],
   );
+
+  useEffect(() => {
+    return () => {
+      if (preview?.url) URL.revokeObjectURL(preview.url);
+    };
+  }, [preview]);
+
+  const closePreview = () => {
+    setPreview(prev => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  };
+
+  const openAttachment = async (att: MailAttachment, mode: 'preview' | 'download') => {
+    setAttBusyId(att.id);
+    setMsg('');
+    try {
+      const result = await fetchGmailAttachment(att.id);
+      if (!result.ok) {
+        setMsg(result.error);
+        return;
+      }
+      if (mode === 'download') {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(result.blob);
+        a.download = result.filename || att.filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+      const url = URL.createObjectURL(result.blob);
+      setPreview(prev => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { filename: result.filename || att.filename, mimeType: result.mimeType, url };
+      });
+    } finally {
+      setAttBusyId(null);
+    }
+  };
 
   const rerunAi = async () => {
     if (!mail) return;
@@ -172,8 +225,51 @@ export function MailReviewView() {
             {mail.body_text || mail.snippet || '(본문 없음)'}
           </pre>
           {attachments.length > 0 && (
-            <div className="text-sm text-slate-600">
-              첨부: {attachments.map(a => a.filename).join(', ')}
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-4 h-4" /> 첨부파일
+                <span className="text-xs font-normal text-slate-400">(Gmail 연동 · Storage 미사용)</span>
+              </h4>
+              <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                {attachments.map(a => {
+                  const canPreview = isPreviewableMime(a.mime_type, a.filename);
+                  const loading = attBusyId === a.id;
+                  const missingId = !a.gmail_attachment_id;
+                  return (
+                    <li key={a.id} className="flex items-center gap-2 px-3 py-2.5 bg-white text-sm">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-slate-800">{a.filename}</div>
+                        <div className="text-xs text-slate-400">
+                          {[a.mime_type, formatBytes(a.size_bytes)].filter(Boolean).join(' · ')}
+                          {missingId && ' · 재동기화 필요'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canPreview && (
+                          <button
+                            type="button"
+                            disabled={loading || missingId || busy}
+                            onClick={() => openAttachment(a, 'preview')}
+                            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                            title={missingId ? 'gmail_attachment_id 없음 — 메일 재수신 후 가능' : '미리보기'}
+                          >
+                            <Eye className="w-3.5 h-3.5" /> 미리보기
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          disabled={loading || missingId || busy}
+                          onClick={() => openAttachment(a, 'download')}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                          title={missingId ? 'gmail_attachment_id 없음 — 메일 재수신 후 가능' : '다운로드'}
+                        >
+                          <Download className="w-3.5 h-3.5" /> 다운
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
         </section>
@@ -343,6 +439,36 @@ export function MailReviewView() {
           onSelect={p => setSelectedPartner(p)}
           onClose={() => setShowPartnerModal(false)}
         />
+      )}
+
+      {preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePreview}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200">
+              <h3 className="font-medium text-slate-800 truncate">{preview.filename}</h3>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 bg-slate-50 p-2 overflow-auto">
+              {preview.mimeType.startsWith('image/') ? (
+                <img src={preview.url} alt={preview.filename} className="max-w-full max-h-[75vh] mx-auto object-contain" />
+              ) : preview.mimeType === 'application/pdf' || preview.filename.toLowerCase().endsWith('.pdf') ? (
+                <iframe title={preview.filename} src={preview.url} className="w-full h-[75vh] rounded-lg bg-white" />
+              ) : (
+                <iframe title={preview.filename} src={preview.url} className="w-full h-[75vh] rounded-lg bg-white" />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </motion.div>
   );

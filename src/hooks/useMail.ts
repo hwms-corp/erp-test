@@ -81,7 +81,13 @@ export function useMail() {
     snippet?: string | null;
     body_text?: string | null;
     body_html?: string | null;
-    attachments?: { filename: string; mime_type?: string; size_bytes?: number; storage_path?: string }[];
+    attachments?: {
+      filename: string;
+      mime_type?: string;
+      size_bytes?: number;
+      storage_path?: string;
+      gmail_attachment_id?: string;
+    }[];
   }) => {
     const { data, error } = await supabase
       .from('mail_messages')
@@ -113,6 +119,7 @@ export function useMail() {
           mime_type: a.mime_type ?? null,
           size_bytes: a.size_bytes ?? null,
           storage_path: a.storage_path ?? null,
+          gmail_attachment_id: a.gmail_attachment_id ?? null,
         })),
       );
     }

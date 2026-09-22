@@ -174,6 +174,7 @@ export interface MailAttachment {
   mime_type: string | null;
   size_bytes: number | null;
   storage_path: string | null;
+  gmail_attachment_id?: string | null;
   sha256: string | null;
   created_at: string;
 }

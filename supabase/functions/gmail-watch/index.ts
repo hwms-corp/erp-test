@@ -3,7 +3,7 @@
  *
  * Endpoints:
  *   GET  /gmail-watch           → health
- *   POST /gmail-watch           → Pub/Sub push (new mail) + AI classify/extract
+ *   POST /gmail-watch           → Pub/Sub push (new mail) + AI classify/extract (parallel per push)
  *   POST /gmail-watch?action=watch → register/renew Gmail users.watch
  *
  * Required secrets:
@@ -12,6 +12,7 @@
  *   GMAIL_USER                me  or  rfq@company.com
  *   AI_DOC_API_URL            public URL to ai-doc-api (not localhost)
  *   AI_DOC_API_KEY            Bearer key for ai-doc-api
+ *   MAIL_AI_CONCURRENCY       optional, default 5 (max parallel mails per push)
  *   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY (auto)
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
@@ -706,83 +707,115 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
     pageToken = hist.nextPageToken;
   } while (pageToken);
 
-  let synced = 0;
-  const aiResults: { mailId: number; status: string }[] = [];
+  const MAIL_CONCURRENCY = Math.max(1, Math.min(10, Number(Deno.env.get('MAIL_AI_CONCURRENCY') || 5)));
 
-  for (const id of messageIds) {
-    const msg = await gmailGet(
-      `/users/${gmailUser()}/messages/${id}?format=full`,
-      accessToken,
-    );
-
-    const headers = (msg.payload?.headers || []) as GmailHeader[];
-    const { text, html } = collectText(msg.payload as GmailPayload);
-    const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
-    const internalDate = msg.internalDate
-      ? new Date(Number(msg.internalDate)).toISOString()
-      : new Date().toISOString();
-
-    // Skip if already processed (Pub/Sub redelivery)
-    const { data: existing } = await sb
-      .from('mail_messages')
-      .select('id, process_status')
-      .eq('gmail_message_id', msg.id)
-      .maybeSingle();
-
-    if (
-      existing &&
-      existing.process_status &&
-      !['received', 'failed', 'classifying', 'extracting'].includes(existing.process_status)
-    ) {
-      console.log('skip already processed', msg.id, existing.process_status);
-      continue;
-    }
-
-    const { data: row, error } = await sb
-      .from('mail_messages')
-      .upsert(
-        {
-          gmail_message_id: msg.id,
-          gmail_thread_id: msg.threadId ?? null,
-          history_id: newestHistoryId,
-          subject: headerValue(headers, 'Subject'),
-          from_addr: headerValue(headers, 'From'),
-          to_addr: headerValue(headers, 'To'),
-          received_at: internalDate,
-          snippet: msg.snippet ?? null,
-          body_text: text,
-          body_html: html,
-          process_status: existing?.process_status === 'failed' ? 'received' : (existing?.process_status || 'received'),
-        },
-        { onConflict: 'gmail_message_id' },
-      )
-      .select('id, process_status')
-      .single();
-
-    if (error) {
-      console.error('upsert mail failed', msg.id, error);
-      continue;
-    }
-
-    if (row && attachments.length) {
-      await sb.from('mail_attachments').delete().eq('mail_message_id', row.id);
-      await sb.from('mail_attachments').insert(
-        attachments.map(a => ({
-          mail_message_id: row.id,
-          filename: a.filename,
-          mime_type: a.mime_type,
-          size_bytes: a.size_bytes,
-        })),
-      );
-    }
-
-    synced += 1;
-
-    const bodyForAi = [text || '', msg.snippet || ''].filter(Boolean).join('\n');
-    const ocrFiles = await collectOcrFiles(String(msg.id), attachments, accessToken);
-    const ai = await runAiForMail(sb, row.id, bodyForAi, ocrFiles);
-    aiResults.push({ mailId: row.id, status: ai.status });
+  /** 동시성 제한 병렬 실행 — 같은 push 안 여러 메일 AI를 동시에 돌림 */
+  async function mapPool<T, R>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const runners = Array.from({ length: Math.min(concurrency, Math.max(1, items.length)) }, async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) break;
+        results[i] = await worker(items[i], i);
+      }
+    });
+    await Promise.all(runners);
+    return results;
   }
+
+  const messageIdList = [...messageIds];
+  const outcomes = await mapPool(messageIdList, MAIL_CONCURRENCY, async (id) => {
+    try {
+      const msg = await gmailGet(
+        `/users/${gmailUser()}/messages/${id}?format=full`,
+        accessToken,
+      );
+
+      const headers = (msg.payload?.headers || []) as GmailHeader[];
+      const { text, html } = collectText(msg.payload as GmailPayload);
+      const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
+      const internalDate = msg.internalDate
+        ? new Date(Number(msg.internalDate)).toISOString()
+        : new Date().toISOString();
+
+      const { data: existing } = await sb
+        .from('mail_messages')
+        .select('id, process_status')
+        .eq('gmail_message_id', msg.id)
+        .maybeSingle();
+
+      if (
+        existing &&
+        existing.process_status &&
+        !['received', 'failed', 'classifying', 'extracting'].includes(existing.process_status)
+      ) {
+        console.log('skip already processed', msg.id, existing.process_status);
+        return { synced: 0 as const, ai: null as { mailId: number; status: string } | null };
+      }
+
+      const { data: row, error } = await sb
+        .from('mail_messages')
+        .upsert(
+          {
+            gmail_message_id: msg.id,
+            gmail_thread_id: msg.threadId ?? null,
+            history_id: newestHistoryId,
+            subject: headerValue(headers, 'Subject'),
+            from_addr: headerValue(headers, 'From'),
+            to_addr: headerValue(headers, 'To'),
+            received_at: internalDate,
+            snippet: msg.snippet ?? null,
+            body_text: text,
+            body_html: html,
+            process_status: existing?.process_status === 'failed' ? 'received' : (existing?.process_status || 'received'),
+          },
+          { onConflict: 'gmail_message_id' },
+        )
+        .select('id, process_status')
+        .single();
+
+      if (error || !row) {
+        console.error('upsert mail failed', msg.id, error);
+        return { synced: 0 as const, ai: null };
+      }
+
+      if (attachments.length) {
+        await sb.from('mail_attachments').delete().eq('mail_message_id', row.id);
+        await sb.from('mail_attachments').insert(
+          attachments.map(a => ({
+            mail_message_id: row.id,
+            filename: a.filename,
+            mime_type: a.mime_type,
+            size_bytes: a.size_bytes,
+            gmail_attachment_id: a.attachment_id,
+          })),
+        );
+      }
+
+      const bodyForAi = [text || '', msg.snippet || ''].filter(Boolean).join('\n');
+      const ocrFiles = await collectOcrFiles(String(msg.id), attachments, accessToken);
+      const ai = await runAiForMail(sb, row.id, bodyForAi, ocrFiles);
+      return {
+        synced: 1 as const,
+        ai: { mailId: row.id, status: ai.status },
+      };
+    } catch (e) {
+      console.error('parallel mail process failed', id, e);
+      return { synced: 0 as const, ai: null };
+    }
+  });
+
+  const synced = outcomes.reduce((n, o) => n + o.synced, 0);
+  const aiResults = outcomes
+    .map(o => o.ai)
+    .filter((x): x is { mailId: number; status: string } => !!x);
+
+  console.log(`push parallel done: synced=${synced} concurrency=${MAIL_CONCURRENCY} total=${messageIdList.length}`);
 
   await sb.from('gmail_sync_state').upsert(
     {
@@ -797,6 +830,7 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
     synced,
     ai: aiResults,
     historyId: incomingHistoryId || newestHistoryId,
+    concurrency: MAIL_CONCURRENCY,
   };
 }
 
