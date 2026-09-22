@@ -278,7 +278,7 @@ export function MailInboxView() {
   };
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 relative">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 sm:space-y-6 relative">
       {showAiModal && (
         <AiConnectionModal
           initialUrl={apiBaseUrl}
@@ -290,15 +290,16 @@ export function MailInboxView() {
         />
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Inbox className="w-7 h-7 text-indigo-600" /> AI 메일함
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Inbox className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+            <span className="truncate">AI 메일함</span>
           </h2>
-          <p className="text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 flex-wrap">
             <span
               title={aiDetail || undefined}
               className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
@@ -319,9 +320,16 @@ export function MailInboxView() {
             >
               <Plug className="w-3.5 h-3.5" /> AI 연동
             </button>
+            <button
+              type="button"
+              onClick={() => { void load(); void refreshAiHealth(); }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm border border-slate-200 bg-white hover:bg-slate-50 ml-auto sm:ml-0"
+            >
+              <RefreshCw className="w-4 h-4" /> 새로고침
+            </button>
           </div>
 
-          <div className="flex w-[15.5rem] shrink-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+          <div className="flex w-full sm:w-[15.5rem] sm:shrink-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-slate-800">견적 자동등록</p>
               <p className="text-[11px] text-slate-500 whitespace-nowrap">
@@ -347,46 +355,41 @@ export function MailInboxView() {
               />
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => { void load(); void refreshAiHealth(); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
-          >
-            <RefreshCw className="w-4 h-4" /> 새로고침
-          </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
-        {statuses.map(s => (
-          <button
-            key={s || 'all'}
-            type="button"
-            onClick={() => setSearchParams(prev => {
-              const n = new URLSearchParams(prev);
-              if (s) n.set('status', s); else n.delete('status');
-              n.set('page', '1');
-              return n;
-            })}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-              status === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
-            }`}
-          >
-            {s ? STATUS_LABEL[s as MailProcessStatus] : '전체'}
-          </button>
-        ))}
-        <div className="ml-auto flex items-center gap-2">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 scrollbar-thin">
+          {statuses.map(s => (
+            <button
+              key={s || 'all'}
+              type="button"
+              onClick={() => setSearchParams(prev => {
+                const n = new URLSearchParams(prev);
+                if (s) n.set('status', s); else n.delete('status');
+                n.set('page', '1');
+                return n;
+              })}
+              className={`shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                status === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
+              }`}
+            >
+              {s ? STATUS_LABEL[s as MailProcessStatus] : '전체'}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:items-center sm:justify-end">
           <button
             type="button"
             disabled={selectedIds.size === 0 || deleteBusy}
             onClick={() => void deleteSelected()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed order-2 sm:order-1"
           >
             <Trash2 className="w-4 h-4" />
             메일선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
           </button>
           <input
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-56"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full sm:w-56 order-1 sm:order-2"
             placeholder="제목/발신자 검색"
             defaultValue={q}
             onKeyDown={e => {
@@ -404,8 +407,90 @@ export function MailInboxView() {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <table className="w-full text-sm table-fixed">
+      {/* 모바일: 카드 리스트 */}
+      <div className="md:hidden space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <input
+            type="checkbox"
+            checked={allPageSelected}
+            ref={el => {
+              if (el) el.indeterminate = somePageSelected && !allPageSelected;
+            }}
+            onChange={toggleSelectAll}
+            aria-label="현재 페이지 전체 선택"
+            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span className="text-xs text-slate-500">전체 선택</span>
+        </div>
+        {loading && (
+          <div className="bg-white rounded-2xl border border-slate-200 px-4 py-10 text-center text-slate-400 text-sm">
+            로딩 중…
+          </div>
+        )}
+        {!loading && mails.length === 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200 px-4 py-10 text-center text-slate-400 text-sm">
+            메일이 없습니다.
+          </div>
+        )}
+        {!loading && mails.map(m => {
+          const unread = m.is_read !== true;
+          const justArrived = justArrivedIds.has(m.id);
+          const checked = selectedIds.has(m.id);
+          const conf = m.extraction?.overall_confidence != null
+            ? `${Math.round(m.extraction.overall_confidence * 100)}%`
+            : m.classify_confidence != null
+              ? `${Math.round(Number(m.classify_confidence) * 100)}%`
+              : null;
+          return (
+            <div
+              key={m.id}
+              className={`bg-white rounded-2xl border border-slate-200 p-3 shadow-sm ${
+                unread ? `mail-row-unread${justArrived ? ' mail-row-arrive' : ''}` : ''
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleSelectOne(m.id)}
+                  aria-label={`${m.subject || '메일'} 선택`}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                  onClick={e => e.stopPropagation()}
+                />
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => navigate(`/mail/${m.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className={`text-sm leading-snug line-clamp-2 ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
+                      <Mail className={`inline w-3.5 h-3.5 mr-1 align-text-top ${unread ? 'text-orange-500' : 'text-slate-400'}`} />
+                      {unread && (
+                        <span className="inline-block mr-1 text-[10px] font-bold uppercase tracking-wide text-orange-600 bg-orange-100 px-1 py-0.5 rounded align-middle">
+                          NEW
+                        </span>
+                      )}
+                      {m.subject || '(제목 없음)'}
+                    </div>
+                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_TONE[m.process_status]}`}>
+                      {STATUS_LABEL[m.process_status]}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500 truncate">{m.from_addr || '—'}</p>
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <span className="tabular-nums whitespace-nowrap">{formatReceivedAtKst(m.received_at)}</span>
+                    {conf && <span className="tabular-nums">신뢰도 {conf}</span>}
+                  </div>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 데스크톱: 테이블 */}
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
               <th className="px-2 py-3 w-10 text-center">
@@ -421,7 +506,7 @@ export function MailInboxView() {
                 />
               </th>
               <th className="px-3 py-3 w-[10.5rem] whitespace-nowrap">수신</th>
-              <th className="px-4 py-3 w-[40%]">제목</th>
+              <th className="px-4 py-3">제목</th>
               <th className="px-4 py-3 w-[11rem]">발신</th>
               <th className="px-4 py-3 w-[6.5rem]">상태</th>
               <th className="px-4 py-3 w-[4.5rem] text-right">신뢰도</th>

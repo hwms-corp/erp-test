@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { aiDocClient } from '@/lib/aiDocClient';
 import { decideProcessStatus, extractionToMaterialLines, matchPartners } from '@/lib/mailMatching';
+import { displayMailBody } from '@/lib/mailBody';
 import type { MailAttachment, MailMessage, CanonicalExtraction } from '@/types/aiMail';
 import type { Partner, MaterialLine } from '@/types';
 import { today } from '@/types';
@@ -48,6 +49,23 @@ export function useMail() {
       .is('deleted_at', null)
       .single();
     return { data: data as MailMessage | null, error };
+  }, []);
+
+  /** 같은 Gmail 스레드의 다른 수신 메일 (이전/이후 이동용) */
+  const fetchThreadMails = useCallback(async (threadId: string) => {
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .select('id, subject, from_addr, received_at, process_status, gmail_message_id, gmail_thread_id')
+      .eq('gmail_thread_id', threadId)
+      .is('deleted_at', null)
+      .order('received_at', { ascending: true });
+    return {
+      data: (data ?? []) as Pick<
+        MailMessage,
+        'id' | 'subject' | 'from_addr' | 'received_at' | 'process_status' | 'gmail_message_id' | 'gmail_thread_id'
+      >[],
+      error,
+    };
   }, []);
 
   const fetchAttachments = useCallback(async (mailId: number) => {
@@ -144,15 +162,34 @@ export function useMail() {
     return { data: data as MailMessage, error: null };
   }, []);
 
-  const runAiPipeline = useCallback(async (mail: MailMessage, attachmentTexts?: { filename: string; text: string }[]) => {
+  const runAiPipeline = useCallback(async (
+    mail: MailMessage,
+    opts?: {
+      attachmentTexts?: { filename: string; text: string }[];
+      files?: { filename: string; mime_type?: string; text?: string; content_base64?: string }[];
+      /** 수동 재실행: 항상 검토필요로 두고 자동등록 경로를 타지 않음 */
+      forceReviewRequired?: boolean;
+      onProgress?: (step: string) => void;
+    },
+  ) => {
+    const attachmentTexts = opts?.attachmentTexts;
+    const forceReview = !!opts?.forceReviewRequired;
+    const onProgress = opts?.onProgress;
+
+    onProgress?.('분류 준비 중…');
     await supabase
       .from('mail_messages')
-      .update({ process_status: 'classifying' })
+      .update({ process_status: 'classifying', error_message: null })
       .eq('id', mail.id);
 
-    const text = [mail.body_text || mail.snippet || '', ...(attachmentTexts?.map(a => a.text) || [])].join('\n');
+    const text = [
+      mail.subject ? `[제목] ${mail.subject}` : '',
+      displayMailBody(mail),
+      ...(attachmentTexts?.map(a => a.text) || []),
+    ].filter(Boolean).join('\n');
 
     try {
+      onProgress?.('문서 분류 중…');
       const cls = await aiDocClient.classify(text);
       const isRfq = cls.data.document_type === 'quotation_request';
 
@@ -166,12 +203,23 @@ export function useMail() {
         .eq('id', mail.id);
 
       if (!isRfq) {
-        return { data: null, error: null, rejected: true as const };
+        onProgress?.('견적의뢰가 아닌 문서로 분류됨');
+        const { data } = await supabase.from('mail_messages').select('*').eq('id', mail.id).single();
+        return { data: data as MailMessage | null, error: null, rejected: true as const };
       }
 
+      onProgress?.('정보 추출 중…');
+      const jobFiles = [
+        ...(opts?.files || []),
+        ...(attachmentTexts?.map(a => ({
+          filename: a.filename,
+          text: a.text,
+          mime_type: 'text/plain',
+        })) || []),
+      ];
       const job = await aiDocClient.createJob({
         text,
-        files: attachmentTexts?.map(a => ({ filename: a.filename, text: a.text, mime_type: 'text/plain' })),
+        files: jobFiles.length ? jobFiles : undefined,
       });
 
       await supabase.from('mail_ai_jobs').upsert(
@@ -179,21 +227,24 @@ export function useMail() {
           mail_message_id: mail.id,
           external_job_id: job.job_id,
           status: job.status,
-          request_payload: { text_len: text.length },
+          request_payload: { text_len: text.length, file_count: jobFiles.length, force_review: forceReview },
         },
         { onConflict: 'external_job_id' },
       );
 
-      const done = await aiDocClient.pollJob(job.job_id);
+      onProgress?.('추출 결과 확인 중…');
+      const done = await aiDocClient.pollJob(job.job_id, { timeoutMs: 90000 });
       if (done.status === 'failed' || !done.result) {
         await supabase
           .from('mail_messages')
           .update({ process_status: 'failed', error_message: done.error || 'extract failed', ai_job_id: job.job_id })
           .eq('id', mail.id);
-        return { data: null, error: { message: done.error || 'extract failed' }, rejected: false as const };
+        return { data: null, error: { message: done.error || '추출 실패' }, rejected: false as const };
       }
 
-      const status = decideProcessStatus(done.result);
+      // 수동 재실행은 항상 검토필요 — 자동등록(ready_auto) 경로 차단
+      const status = forceReview ? 'review_required' : decideProcessStatus(done.result);
+      onProgress?.('결과 저장 중…');
       const { data, error } = await supabase
         .from('mail_messages')
         .update({
@@ -376,6 +427,7 @@ export function useMail() {
   return {
     fetchMails,
     fetchMail,
+    fetchThreadMails,
     fetchAttachments,
     markMailRead,
     softDeleteMails,

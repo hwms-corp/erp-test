@@ -67,3 +67,51 @@ export function formatBytes(n: number | null | undefined): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+export function isOcrCandidate(filename: string, mime: string | null | undefined): boolean {
+  const m = (mime || '').toLowerCase();
+  const f = filename.toLowerCase();
+  return (
+    m.includes('pdf') ||
+    f.endsWith('.pdf') ||
+    m.startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f)
+  );
+}
+
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+const MAX_OCR_FILES = 5;
+const MAX_OCR_BYTES = 8 * 1024 * 1024;
+
+/** 재실행용: Gmail에서 OCR 후보 첨부만 base64로 수집 */
+export async function collectOcrFilesFromAttachments(
+  attachments: { id: number; filename: string; mime_type: string | null; size_bytes: number | null; gmail_attachment_id?: string | null }[],
+): Promise<{ filename: string; mime_type?: string; content_base64: string }[]> {
+  const files: { filename: string; mime_type?: string; content_base64: string }[] = [];
+  for (const att of attachments) {
+    if (files.length >= MAX_OCR_FILES) break;
+    if (!att.gmail_attachment_id) continue;
+    if (!isOcrCandidate(att.filename, att.mime_type)) continue;
+    if (att.size_bytes != null && att.size_bytes > MAX_OCR_BYTES) continue;
+    const result = await fetchGmailAttachment(att.id);
+    if (!result.ok) continue;
+    if (result.blob.size > MAX_OCR_BYTES) continue;
+    const content_base64 = await blobToBase64(result.blob);
+    files.push({
+      filename: result.filename || att.filename,
+      mime_type: result.mimeType || att.mime_type || undefined,
+      content_base64,
+    });
+  }
+  return files;
+}

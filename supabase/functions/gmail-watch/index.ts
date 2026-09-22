@@ -338,6 +338,68 @@ function collectText(payload: GmailPayload | undefined): { text: string | null; 
   return { text, html };
 }
 
+/** 답장/전달에 붙은 이전 메일 인용 제거 — 이번 수신분만 유지 */
+function stripQuotedReplyText(text: string | null | undefined): string {
+  if (!text) return '';
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const headerRe = [
+    /^On .+ wrote:\s*$/i,
+    /^.*님이 작성한 내용:\s*$/,
+    /^\d{4}년\s*\d{1,2}월\s*\d{1,2}일.+(작성|씀)\s*:\s*$/,
+    /^-----Original Message-----/i,
+    /^---------- Forwarded message ---------/i,
+    /^Begin forwarded message:\s*$/i,
+    /^________________________________\s*$/,
+    /^From:\s.+/i,
+    /^보낸 사람\s*:\s*.+$/,
+  ];
+
+  let cutAt = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t) continue;
+    if (i === 0 && /^From:\s/i.test(t)) continue;
+    if (headerRe.some(p => p.test(t))) {
+      cutAt = i;
+      break;
+    }
+  }
+
+  if (cutAt < 0) {
+    let seenContent = false;
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (t && !t.startsWith('>')) seenContent = true;
+      if (seenContent && t.startsWith('>') && i > 0 && !lines[i - 1].trim()) {
+        cutAt = i - 1;
+        break;
+      }
+    }
+  }
+
+  const kept = cutAt >= 0 ? lines.slice(0, cutAt) : lines;
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function stripQuotedReplyHtml(html: string | null | undefined): string {
+  if (!html) return '';
+  let out = html;
+  out = out.replace(/<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>[\s\S]*$/i, '');
+  out = out.replace(/<div[^>]*class="[^"]*gmail_extra[^"]*"[^>]*>[\s\S]*$/i, '');
+  out = out.replace(/<blockquote[\s\S]*$/i, '');
+  return out.trim();
+}
+
+/** INBOX만 동기화 — SENT/DRAFT/SPAM/TRASH 제외 */
+function isInboxMessage(labelIds: string[] | undefined): boolean {
+  const labels = labelIds || [];
+  if (!labels.includes('INBOX')) return false;
+  if (labels.includes('DRAFT') || labels.includes('SPAM') || labels.includes('TRASH')) return false;
+  // SENT만 있고 INBOX가 없는 경우는 위에서 걸러짐. INBOX+SENT 동시(드묾)는 수신으로 허용.
+  return true;
+}
+
 function collectAttachmentMeta(payload: GmailPayload | undefined) {
   const out: {
     filename: string;
@@ -345,16 +407,22 @@ function collectAttachmentMeta(payload: GmailPayload | undefined) {
     size_bytes: number | null;
     attachment_id: string | null;
     data_b64url: string | null;
+    content_id: string | null;
   }[] = [];
   const walk = (p?: GmailPayload) => {
     if (!p) return;
-    if (p.filename) {
+    const cidRaw = headerValue(p.headers, 'Content-ID');
+    const contentId = cidRaw ? cidRaw.replace(/^<|>$/g, '').trim() : null;
+    const hasFile = !!(p.filename && p.filename.trim());
+    const hasInline = !!(contentId && (p.body?.attachmentId || p.body?.data));
+    if (hasFile || hasInline) {
       out.push({
-        filename: p.filename,
+        filename: hasFile ? p.filename! : `inline-${contentId}`,
         mime_type: p.mimeType ?? null,
         size_bytes: p.body?.size ?? null,
         attachment_id: p.body?.attachmentId ?? null,
         data_b64url: p.body?.data ?? null,
+        content_id: contentId,
       });
     }
     for (const part of p.parts || []) walk(part);
@@ -736,8 +804,18 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
         accessToken,
       );
 
+      const labels = (msg.labelIds || []) as string[];
+      if (!isInboxMessage(labels)) {
+        console.log('skip non-inbox message', msg.id, labels.join(','));
+        return { synced: 0 as const, ai: null as { mailId: number; status: string } | null };
+      }
+
       const headers = (msg.payload?.headers || []) as GmailHeader[];
-      const { text, html } = collectText(msg.payload as GmailPayload);
+      const collected = collectText(msg.payload as GmailPayload);
+      const textRaw = collected.text;
+      const htmlRaw = collected.html;
+      const text = stripQuotedReplyText(textRaw) || null;
+      const html = stripQuotedReplyHtml(htmlRaw) || null;
       const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
       const internalDate = msg.internalDate
         ? new Date(Number(msg.internalDate)).toISOString()
@@ -793,6 +871,7 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
             mime_type: a.mime_type,
             size_bytes: a.size_bytes,
             gmail_attachment_id: a.attachment_id,
+            content_id: a.content_id,
           })),
         );
       }

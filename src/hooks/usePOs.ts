@@ -50,6 +50,14 @@ export function usePOs() {
     },
     items: POLine[],
   ) => {
+    const validItems = items.filter(i => i.name.trim() && Number(i.qty) > 0);
+    if (!validItems.length) {
+      return {
+        data: null,
+        error: { message: '품명과 수량(1 이상)이 있는 품목이 필요합니다.' } as { message: string },
+      };
+    }
+
     const { data: po, error: poErr } = await supabase
       .from('pos')
       .insert({
@@ -67,11 +75,11 @@ export function usePOs() {
 
     if (poErr || !po) return { data: null, error: poErr };
 
-    const itemRows = items.map((item, i) => ({
+    const itemRows = validItems.map((item, i) => ({
       po_id: po.id,
       order_item_id: item.order_item_id || null,
       seq: i + 1,
-      name: item.name,
+      name: item.name.trim(),
       spec: item.spec || null,
       qty: item.qty,
       unit: item.unit,
@@ -84,7 +92,16 @@ export function usePOs() {
       .from('po_items')
       .insert(itemRows);
 
-    if (itemErr) return { data: null, error: itemErr };
+    if (itemErr) {
+      // 품목 실패 시 헤더 고아 행 제거 (빈 발주서 잔존 방지)
+      const now = new Date().toISOString();
+      await supabase
+        .from('pos')
+        .update({ deleted_at: now })
+        .eq('id', po.id)
+        .is('deleted_at', null);
+      return { data: null, error: itemErr };
+    }
 
     return { data: po, error: null };
   }, []);

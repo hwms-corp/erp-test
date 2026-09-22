@@ -129,10 +129,13 @@ export function POFormView() {
   const { supply, tax, total } = calcPOAmounts(validLinesForAmount, partner?.name ?? '');
 
   const handleSubmit = async () => {
+    if (saving) return;
     if (!partner) return alert('거래처를 선택해주세요.');
     if (!user) return alert('로그인이 필요합니다.');
-    const validLines = lines.filter(l => l.name.trim());
-    if (validLines.length === 0) return alert('품목을 1개 이상 입력해주세요.');
+    const validLines = lines.filter(l => l.name.trim() && Number(l.qty) > 0);
+    if (validLines.length === 0) {
+      return alert('품명과 수량(1 이상)이 있는 품목을 1개 이상 입력해주세요.');
+    }
 
     setSaving(true);
 

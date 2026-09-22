@@ -1,22 +1,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, Download, Eye, FileText, Search, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileText, Search, Sparkles, X } from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
 import { useAuth } from '@/hooks/useAuth';
 import { PartnerSearchModal } from '@/components/PartnerSearchModal';
+import { ExtractionKvTable } from '@/components/ExtractionKvTable';
+import { MailHtmlBody } from '@/components/MailHtmlBody';
 import { extractionToMaterialLines } from '@/lib/mailMatching';
 import {
+  collectOcrFilesFromAttachments,
   fetchGmailAttachment,
   formatBytes,
   isPreviewableMime,
 } from '@/lib/gmailAttachment';
-import type { CanonicalExtraction, MailAttachment, MailMessage, PartnerMatchCandidate } from '@/types/aiMail';
+import type { CanonicalExtraction, MailAttachment, MailMessage, MailProcessStatus, PartnerMatchCandidate } from '@/types/aiMail';
 import type { Partner } from '@/types';
 import { today } from '@/types';
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
+
+const STATUS_LABEL: Record<MailProcessStatus, string> = {
+  received: '수신',
+  classifying: '분류중',
+  extracting: '추출중',
+  review_required: '검토필요',
+  ready_auto: '자동후보',
+  registered: '견적등록',
+  rejected: '비견적',
+  failed: '실패',
+};
 
 type PreviewState = {
   filename: string;
@@ -29,11 +43,14 @@ export function MailReviewView() {
   const mailId = Number(id);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchMail, fetchAttachments, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners } = useMail();
+  const { fetchMail, fetchAttachments, fetchThreadMails, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners } = useMail();
   const { fetchPartners } = usePartners();
 
   const [mail, setMail] = useState<MailMessage | null>(null);
   const [attachments, setAttachments] = useState<MailAttachment[]>([]);
+  const [threadMails, setThreadMails] = useState<
+    Pick<MailMessage, 'id' | 'subject' | 'from_addr' | 'received_at' | 'process_status'>[]
+  >([]);
   const [extraction, setExtraction] = useState<CanonicalExtraction | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [candidates, setCandidates] = useState<PartnerMatchCandidate[]>([]);
@@ -69,6 +86,12 @@ export function MailReviewView() {
       }
       const { data: atts } = await fetchAttachments(mailId);
       setAttachments(atts ?? []);
+      if (data?.gmail_thread_id) {
+        const { data: thread } = await fetchThreadMails(data.gmail_thread_id);
+        setThreadMails(thread);
+      } else {
+        setThreadMails([]);
+      }
       const { data: partnerList } = await fetchPartners();
       const list = partnerList ?? [];
       setPartners(list);
@@ -79,11 +102,27 @@ export function MailReviewView() {
         applyPartnerSuggestions(data.extraction, list);
       }
     })();
-  }, [mailId, fetchMail, fetchAttachments, fetchPartners, markMailRead, suggestPartners]);
+  }, [mailId, fetchMail, fetchAttachments, fetchThreadMails, fetchPartners, markMailRead, suggestPartners]);
 
   const lines = useMemo(
     () => (extraction ? extractionToMaterialLines(extraction) : []),
     [extraction],
+  );
+
+  const threadNav = useMemo(() => {
+    if (!mail || threadMails.length < 2) return { prev: null as typeof threadMails[0] | null, next: null as typeof threadMails[0] | null, index: 0, total: threadMails.length };
+    const idx = threadMails.findIndex(t => t.id === mail.id);
+    return {
+      prev: idx > 0 ? threadMails[idx - 1] : null,
+      next: idx >= 0 && idx < threadMails.length - 1 ? threadMails[idx + 1] : null,
+      index: idx >= 0 ? idx + 1 : 0,
+      total: threadMails.length,
+    };
+  }, [mail, threadMails]);
+
+  const listedAttachments = useMemo(
+    () => attachments.filter(a => !(a.content_id && (a.mime_type || '').startsWith('image/'))),
+    [attachments],
   );
 
   useEffect(() => {
@@ -127,19 +166,48 @@ export function MailReviewView() {
   };
 
   const rerunAi = async () => {
-    if (!mail) return;
+    if (!mail || busy) return;
+    const ok = confirm(
+      'AI 추출을 다시 실행할까요?\n\n'
+      + '· 분류 → 추출을 처음부터 다시 수행합니다.\n'
+      + '· 재실행 후에는 반드시 직접 검토해 주세요.\n'
+      + '· 견적 자동등록은 실행되지 않습니다.',
+    );
+    if (!ok) return;
+
     setBusy(true);
-    setMsg('');
-    const { data, error } = await runAiPipeline(mail);
-    setBusy(false);
-    if (error) setMsg(error.message);
-    else if (data) {
-      setMail(data);
-      setExtraction(data.extraction);
-      const { data: partnerList } = await fetchPartners();
-      const list = partnerList ?? [];
-      setPartners(list);
-      if (data.extraction && list.length) applyPartnerSuggestions(data.extraction, list);
+    setMsg('첨부파일 준비 중…');
+    try {
+      const ocrFiles = await collectOcrFilesFromAttachments(attachments);
+      if (ocrFiles.length) {
+        setMsg(`첨부 ${ocrFiles.length}개 포함 · 분류 준비 중…`);
+      }
+      const { data, error, rejected } = await runAiPipeline(mail, {
+        files: ocrFiles,
+        forceReviewRequired: true,
+        onProgress: step => setMsg(step),
+      });
+      if (error) {
+        setMsg(`재실행 실패: ${error.message}`);
+        return;
+      }
+      if (rejected) {
+        if (data) setMail(data);
+        setExtraction(null);
+        setMsg('견적의뢰가 아닌 문서로 분류되었습니다. 상태를 확인해 주세요.');
+        return;
+      }
+      if (data) {
+        setMail(data);
+        setExtraction(data.extraction);
+        const { data: partnerList } = await fetchPartners();
+        const list = partnerList ?? [];
+        setPartners(list);
+        if (data.extraction && list.length) applyPartnerSuggestions(data.extraction, list);
+        setMsg('추출 재실행 완료 — 자동등록 없이 검토필요 상태입니다. 아래 결과를 확인해 주세요.');
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -182,56 +250,96 @@ export function MailReviewView() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => navigate('/mail')} className="p-2 text-slate-500 hover:text-slate-800">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold text-slate-900 truncate">{mail.subject || '(제목 없음)'}</h2>
-          <p className="text-sm text-slate-500">{mail.from_addr} · {mail.process_status}</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <button type="button" onClick={() => navigate('/mail')} className="p-2 text-slate-500 hover:text-slate-800 shrink-0">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-900 break-words">{mail.subject || '(제목 없음)'}</h2>
+            <p className="text-xs sm:text-sm text-slate-500 break-all">
+              {mail.from_addr} · {STATUS_LABEL[mail.process_status] || mail.process_status}
+            </p>
+          </div>
         </div>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={rerunAi}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
-        >
-          <Sparkles className="w-4 h-4" /> AI 재실행
-        </button>
-        <button
-          type="button"
-          disabled={busy || !extraction}
-          onClick={saveEdits}
-          className="px-3 py-2 rounded-xl text-sm bg-slate-800 text-white disabled:opacity-50"
-        >
-          추출 저장
-        </button>
-        <button
-          type="button"
-          disabled={busy || !extraction || mail.process_status === 'registered'}
-          onClick={register}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          <CheckCircle2 className="w-4 h-4" /> 견적 등록
-        </button>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void rerunAi()}
+            title="분류·추출을 다시 실행합니다. 자동등록은 하지 않습니다."
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4" /> {busy ? '재실행 중…' : '추출 재실행'}
+          </button>
+          <button
+            type="button"
+            disabled={busy || !extraction}
+            onClick={saveEdits}
+            className="px-3 py-2 rounded-xl text-sm bg-slate-800 text-white disabled:opacity-50"
+          >
+            추출 저장
+          </button>
+          <button
+            type="button"
+            disabled={busy || !extraction || mail.process_status === 'registered'}
+            onClick={register}
+            className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-4 h-4" /> 견적 등록
+          </button>
+        </div>
       </div>
 
       {msg && <div className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">{msg}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-          <h3 className="font-semibold text-slate-800">원문</h3>
-          <pre className="text-xs text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-xl p-3 max-h-[480px] overflow-auto">
-            {mail.body_text || mail.snippet || '(본문 없음)'}
-          </pre>
-          {attachments.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-slate-800">원문 (이번 수신분)</h3>
+            {threadNav.total > 1 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  type="button"
+                  disabled={!threadNav.prev}
+                  onClick={() => threadNav.prev && navigate(`/mail/${threadNav.prev.id}`)}
+                  className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
+                  title={threadNav.prev ? (threadNav.prev.subject || '이전 메일') : '이전 메일 없음'}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> 이전 메일
+                </button>
+                <span className="text-slate-400 tabular-nums px-1">
+                  {threadNav.index}/{threadNav.total}
+                </span>
+                <button
+                  type="button"
+                  disabled={!threadNav.next}
+                  onClick={() => threadNav.next && navigate(`/mail/${threadNav.next.id}`)}
+                  className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
+                  title={threadNav.next ? (threadNav.next.subject || '이후 메일') : '이후 메일 없음'}
+                >
+                  이후 메일 <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Gmail HTML 원문을 그대로 표시합니다(표·이미지 포함). 답장·전달 인용은 제외되며, 같은 스레드는 위 버튼으로 이동합니다.
+          </p>
+          <MailHtmlBody
+            bodyHtml={mail.body_html}
+            bodyText={mail.body_text}
+            snippet={mail.snippet}
+            attachments={attachments}
+          />
+          {listedAttachments.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
                 <FileText className="w-4 h-4" /> 첨부파일
                 <span className="text-xs font-normal text-slate-400">(Gmail 연동 · Storage 미사용)</span>
               </h4>
               <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-                {attachments.map(a => {
+                {listedAttachments.map(a => {
                   const canPreview = isPreviewableMime(a.mime_type, a.filename);
                   const loading = attBusyId === a.id;
                   const missingId = !a.gmail_attachment_id;
@@ -251,7 +359,7 @@ export function MailReviewView() {
                             disabled={loading || missingId || busy}
                             onClick={() => openAttachment(a, 'preview')}
                             className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                            title={missingId ? 'gmail_attachment_id 없음 — 메일 재수신 후 가능' : '미리보기'}
+                            title={missingId ? '첨부 ID 없음 — 메일 재수신 후 가능' : '미리보기'}
                           >
                             <Eye className="w-3.5 h-3.5" /> 미리보기
                           </button>
@@ -261,7 +369,7 @@ export function MailReviewView() {
                           disabled={loading || missingId || busy}
                           onClick={() => openAttachment(a, 'download')}
                           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                          title={missingId ? 'gmail_attachment_id 없음 — 메일 재수신 후 가능' : '다운로드'}
+                          title={missingId ? '첨부 ID 없음 — 메일 재수신 후 가능' : '다운로드'}
                         >
                           <Download className="w-3.5 h-3.5" /> 다운
                         </button>
@@ -279,12 +387,16 @@ export function MailReviewView() {
             <h3 className="font-semibold text-slate-800">AI 추출 결과</h3>
             {extraction && (
               <span className="text-xs text-slate-500">
-                confidence {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}
+                신뢰도 {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}
               </span>
             )}
           </div>
 
-          {!extraction && <p className="text-sm text-slate-400">추출 결과 없음. AI 재실행을 눌러주세요.</p>}
+          {!extraction && (
+            <p className="text-sm text-slate-400">
+              추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">추출 재실행</span>을 눌러 주세요.
+            </p>
+          )}
 
           {extraction && (
             <>
@@ -431,6 +543,8 @@ export function MailReviewView() {
           )}
         </section>
       </div>
+
+      {extraction && <ExtractionKvTable extraction={extraction} mail={mail} />}
 
       {showPartnerModal && (
         <PartnerSearchModal

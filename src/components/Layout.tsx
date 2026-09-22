@@ -14,6 +14,7 @@ const BREADCRUMBS: Record<string, string> = {
   '/pos': '발주서 검색',
   '/receiving': '입고 처리',
   '/delivery': '납품 처리',
+  '/mail': 'AI 메일함',
 };
 
 function getBreadcrumb(pathname: string): string {
