@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
+import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
+import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
 import { supabase } from '@/lib/supabase';
 import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
 import { formatYmdSlash } from '@/types';
@@ -33,6 +35,22 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 
 const PAGE_SIZE = 20;
 
+const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
+  checking: '확인 중…',
+  online: 'AI 동작 중',
+  offline: 'AI 연결 안 됨',
+  unauthorized: 'API Key 오류',
+  unconfigured: '미설정',
+};
+
+const AI_STATUS_TONE: Record<AiHealthStatus, string> = {
+  checking: 'bg-slate-100 text-slate-600 border-slate-200',
+  online: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  offline: 'bg-red-50 text-red-700 border-red-200',
+  unauthorized: 'bg-amber-50 text-amber-800 border-amber-200',
+  unconfigured: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+
 export function MailInboxView() {
   const { user } = useAuth();
   const { fetchMails, fetchMailAiSettings, updateMailAiSettings } = useMail();
@@ -41,6 +59,11 @@ export function MailInboxView() {
   const [loading, setLoading] = useState(true);
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
   const [autoRegister, setAutoRegister] = useState(false);
+  const [apiBaseUrl, setApiBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [aiStatus, setAiStatus] = useState<AiHealthStatus>('checking');
+  const [aiDetail, setAiDetail] = useState<string | undefined>();
+  const [showAiModal, setShowAiModal] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -51,10 +74,28 @@ export function MailInboxView() {
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
+  const refreshAiHealth = useCallback(async () => {
+    setAiStatus('checking');
+    const r = await checkAiDocHealth();
+    setAiStatus(r.status);
+    setAiDetail(r.detail);
+  }, []);
+
   const loadSettings = useCallback(async () => {
     const { data } = await fetchMailAiSettings();
     setAutoRegister(!!data?.auto_register_draft);
-  }, [fetchMailAiSettings]);
+    const url = data?.api_base_url?.trim() || '';
+    const key = data?.api_key?.trim() || '';
+    setApiBaseUrl(url);
+    setApiKey(key);
+    if (url || key) {
+      setAiDocConfig({
+        ...(url ? { apiBaseUrl: url } : {}),
+        ...(key ? { apiKey: key } : {}),
+      });
+    }
+    await refreshAiHealth();
+  }, [fetchMailAiSettings, refreshAiHealth]);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -112,9 +153,24 @@ export function MailInboxView() {
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'mail_ai_settings' },
         payload => {
-          const row = payload.new as { auto_register_draft?: boolean };
+          const row = payload.new as {
+            auto_register_draft?: boolean;
+            api_base_url?: string | null;
+            api_key?: string | null;
+          };
           if (typeof row?.auto_register_draft === 'boolean') {
             setAutoRegister(row.auto_register_draft);
+          }
+          if (row.api_base_url != null || row.api_key != null) {
+            const url = row.api_base_url?.trim() || '';
+            const key = row.api_key?.trim() || '';
+            setApiBaseUrl(url);
+            setApiKey(key);
+            setAiDocConfig({
+              ...(url ? { apiBaseUrl: url } : {}),
+              ...(key ? { apiKey: key } : {}),
+            });
+            void refreshAiHealth();
           }
         },
       )
@@ -123,19 +179,35 @@ export function MailInboxView() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, refreshAiHealth]);
 
   const toggleAutoRegister = async () => {
     if (!isAdmin || !user || settingsBusy) return;
     const next = !autoRegister;
     setSettingsBusy(true);
     setAutoRegister(next);
-    const { error } = await updateMailAiSettings(next, user.id);
+    const { error } = await updateMailAiSettings({ auto_register_draft: next }, user.id);
     if (error) {
       setAutoRegister(!next);
       console.error(error);
     }
     setSettingsBusy(false);
+  };
+
+  const saveAiConnection = async (url: string, key: string) => {
+    if (!isAdmin || !user) return '관리자만 저장할 수 있습니다';
+    setSettingsBusy(true);
+    const { error } = await updateMailAiSettings(
+      { api_base_url: url, api_key: key },
+      user.id,
+    );
+    setSettingsBusy(false);
+    if (error) return error.message || '저장 실패';
+    setApiBaseUrl(url);
+    setApiKey(key);
+    setAiDocConfig({ apiBaseUrl: url, apiKey: key });
+    await refreshAiHealth();
+    return null;
   };
 
   const statuses = useMemo(
@@ -145,6 +217,17 @@ export function MailInboxView() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 relative">
+      {showAiModal && (
+        <AiConnectionModal
+          initialUrl={apiBaseUrl}
+          initialKey={apiKey}
+          canEdit={isAdmin}
+          busy={settingsBusy}
+          onClose={() => setShowAiModal(false)}
+          onSave={saveAiConnection}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -153,6 +236,29 @@ export function MailInboxView() {
           <p className="text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span
+              title={aiDetail || undefined}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  aiStatus === 'online' ? 'bg-emerald-500'
+                    : aiStatus === 'checking' ? 'bg-slate-400 animate-pulse'
+                      : aiStatus === 'unauthorized' ? 'bg-amber-500' : 'bg-red-500'
+                }`}
+              />
+              {AI_STATUS_LABEL[aiStatus]}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowAiModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+            >
+              <Plug className="w-3.5 h-3.5" /> AI 연동
+            </button>
+          </div>
+
           <div className="flex items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2">
             <div className="min-w-0">
               <p className="text-xs font-semibold text-slate-800">견적 자동등록</p>
@@ -181,7 +287,7 @@ export function MailInboxView() {
           </div>
           <button
             type="button"
-            onClick={() => void load()}
+            onClick={() => { void load(); void refreshAiHealth(); }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
           >
             <RefreshCw className="w-4 h-4" /> 새로고침
