@@ -13,10 +13,13 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Mail, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { MailMessage } from '@/types/aiMail';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 const TOAST_VISIBLE = 3;
 const TOAST_CARD_H = 84;
 const TOAST_GAP = 8;
+/** Realtime 누락 대비 폴링 (탭이 보일 때만) */
+const POLL_MS = 12_000;
 
 export type MailToast = {
   key: string;
@@ -115,6 +118,8 @@ function MailToastStack() {
 
 export function MailToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<MailToast[]>([]);
+  const lastSeenIdRef = useRef<number | null>(null);
+  const readyRef = useRef(false);
 
   const dismissToast = useCallback((key: string) => {
     setToasts(prev => prev.filter(t => t.key !== key));
@@ -133,25 +138,117 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
         },
       ];
     });
+    lastSeenIdRef.current = Math.max(lastSeenIdRef.current ?? 0, mailId);
   }, []);
 
-  // 앱 전역: 어떤 화면이든 새 메일 INSERT → 알림 유지
+  // Realtime INSERT + JWT 갱신 + 폴링 백업
   useEffect(() => {
-    const channel = supabase
-      .channel('mail_toast_global')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'mail_messages' },
-        payload => {
-          const row = payload.new as MailMessage;
-          if (row?.id == null) return;
-          pushToast(Number(row.id), row.subject, row.from_addr);
-        },
-      )
-      .subscribe();
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
+    let pollTimer: number | undefined;
+
+    const syncRealtimeAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+    };
+
+    const markSeen = (id: number) => {
+      lastSeenIdRef.current = Math.max(lastSeenIdRef.current ?? 0, id);
+    };
+
+    const pollNewMails = async () => {
+      if (cancelled || document.visibilityState !== 'visible') return;
+      const since = lastSeenIdRef.current;
+      if (since == null || !readyRef.current) return;
+
+      const { data, error } = await supabase
+        .from('mail_messages')
+        .select('id, subject, from_addr, deleted_at')
+        .is('deleted_at', null)
+        .gt('id', since)
+        .order('id', { ascending: true })
+        .limit(20);
+
+      if (error || !data?.length) return;
+      for (const row of data) {
+        pushToast(Number(row.id), row.subject, row.from_addr);
+      }
+    };
+
+    const startPoll = () => {
+      if (pollTimer != null) window.clearInterval(pollTimer);
+      pollTimer = window.setInterval(() => { void pollNewMails(); }, POLL_MS);
+    };
+
+    const subscribeRealtime = async () => {
+      await syncRealtimeAuth();
+      if (cancelled) return;
+
+      if (channel) {
+        await supabase.removeChannel(channel);
+        channel = null;
+      }
+
+      channel = supabase
+        .channel('mail_toast_global')
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'mail_messages' },
+          payload => {
+            const row = payload.new as MailMessage;
+            if (row?.id == null) return;
+            if (row.deleted_at) return;
+            pushToast(Number(row.id), row.subject, row.from_addr);
+          },
+        )
+        .subscribe((status, err) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[mail-toast] realtime', status, err);
+            // 짧게 쉬고 재구독
+            window.setTimeout(() => {
+              if (!cancelled) void subscribeRealtime();
+            }, 2500);
+          }
+        });
+    };
+
+    (async () => {
+      // 기준점: 현재 최신 id — 이후 신규만 토스트 (새로고침 시 과거 메일 폭주 방지)
+      const { data: latest } = await supabase
+        .from('mail_messages')
+        .select('id')
+        .is('deleted_at', null)
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (latest?.id != null) markSeen(Number(latest.id));
+      readyRef.current = true;
+
+      await subscribeRealtime();
+      startPoll();
+    })();
+
+    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) {
+        void supabase.realtime.setAuth(session.access_token);
+      }
+    });
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void pollNewMails();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      readyRef.current = false;
+      document.removeEventListener('visibilitychange', onVisible);
+      authSub.subscription.unsubscribe();
+      if (pollTimer != null) window.clearInterval(pollTimer);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [pushToast]);
 

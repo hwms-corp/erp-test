@@ -837,29 +837,36 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
         return { synced: 0 as const, ai: null as { mailId: number; status: string } | null };
       }
 
-      const { data: row, error } = await sb
-        .from('mail_messages')
-        .upsert(
-          {
-            gmail_message_id: msg.id,
-            gmail_thread_id: msg.threadId ?? null,
-            history_id: newestHistoryId,
-            subject: headerValue(headers, 'Subject'),
-            from_addr: headerValue(headers, 'From'),
-            to_addr: headerValue(headers, 'To'),
-            received_at: internalDate,
-            snippet: msg.snippet ?? null,
-            body_text: text,
-            body_html: html,
-            process_status: existing?.process_status === 'failed' ? 'received' : (existing?.process_status || 'received'),
-          },
-          { onConflict: 'gmail_message_id' },
-        )
-        .select('id, process_status')
-        .single();
+      // 신규는 insert(Realtime INSERT→토스트), 기존은 update(UPDATE만)
+      const mailPayload = {
+        gmail_message_id: msg.id,
+        gmail_thread_id: msg.threadId ?? null,
+        history_id: newestHistoryId,
+        subject: headerValue(headers, 'Subject'),
+        from_addr: headerValue(headers, 'From'),
+        to_addr: headerValue(headers, 'To'),
+        received_at: internalDate,
+        snippet: msg.snippet ?? null,
+        body_text: text,
+        body_html: html,
+        process_status: existing?.process_status === 'failed' ? 'received' : (existing?.process_status || 'received'),
+      };
+
+      const { data: row, error } = existing
+        ? await sb
+            .from('mail_messages')
+            .update(mailPayload)
+            .eq('id', existing.id)
+            .select('id, process_status')
+            .single()
+        : await sb
+            .from('mail_messages')
+            .insert(mailPayload)
+            .select('id, process_status')
+            .single();
 
       if (error || !row) {
-        console.error('upsert mail failed', msg.id, error);
+        console.error('save mail failed', msg.id, error);
         return { synced: 0 as const, ai: null };
       }
 
@@ -877,7 +884,12 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
         );
       }
 
-      const bodyForAi = [text || '', msg.snippet || ''].filter(Boolean).join('\n');
+      const subjectLine = headerValue(headers, 'Subject');
+      const bodyForAi = [
+        subjectLine ? `[제목]\n${subjectLine}` : '',
+        text ? `[본문]\n${text}` : '',
+        !text && msg.snippet ? `[스니펫]\n${msg.snippet}` : '',
+      ].filter(Boolean).join('\n\n');
       const ocrFiles = await collectOcrFiles(String(msg.id), attachments, accessToken);
       const ai = await runAiForMail(sb, row.id, bodyForAi, ocrFiles);
       return {

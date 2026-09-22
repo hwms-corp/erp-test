@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import type { CanonicalExtraction, ExtractedField, MailMessage } from '@/types/aiMail';
+import type { CanonicalExtraction, ExtractedField, MailAttachment, MailMessage } from '@/types/aiMail';
 import { displayMailBody } from '@/lib/mailBody';
 
 type KvRow = {
@@ -35,6 +35,27 @@ const FIELD_LABELS: Record<string, string> = {
   'requested_price': '요청단가',
   'remark': '품목비고',
 };
+
+const BODY_SOURCE_TOKENS = new Set([
+  '',
+  'body',
+  'body.txt',
+  'mail_body',
+  'email',
+  'text',
+  'mail',
+  'input',
+  '본문',
+  '메일본문',
+]);
+
+const SUBJECT_SOURCE_TOKENS = new Set([
+  'subject',
+  'mail_subject',
+  'title',
+  '제목',
+  '메일제목',
+]);
 
 function fmtValue(v: unknown): string {
   if (v == null || v === '') return '—';
@@ -92,29 +113,97 @@ export function flattenExtractionRows(extraction: CanonicalExtraction): KvRow[] 
   return rows;
 }
 
-function sourceKindLabel(sourceFile: string | null): string {
-  if (!sourceFile || sourceFile === 'body' || sourceFile === 'mail_body' || sourceFile === 'email') {
-    return '메일본문';
+function compact(s: string): string {
+  return s.replace(/\s+/g, '').toLowerCase();
+}
+
+function containsLoose(haystack: string, needle: string): boolean {
+  const n = needle.trim();
+  if (!n || n.length < 2) return false;
+  if (haystack.includes(n)) return true;
+  const h = compact(haystack);
+  const c = compact(n);
+  return c.length >= 2 && h.includes(c);
+}
+
+/** 모델 source_file + 근거문구로 메일제목/본문/첨부를 판별 */
+export function resolveFieldSource(
+  field: ExtractedField,
+  mail: MailMessage,
+  attachments: MailAttachment[] = [],
+): string {
+  const raw = (field.source_file || '').trim();
+  const token = raw.toLowerCase();
+  const evidence = (
+    field.evidence_text
+    || field.original_value
+    || (field.value != null && field.value !== '' ? String(field.value) : '')
+  ).trim();
+  const subject = (mail.subject || '').trim();
+  const body = displayMailBody(mail);
+  const pageSuffix = field.source_page != null && field.source_page > 0
+    ? ` · ${field.source_page}페이지`
+    : '';
+
+  const namedAtt = attachments.find(a => {
+    const fn = (a.filename || '').trim();
+    if (!fn) return false;
+    return fn === raw || fn.toLowerCase() === token;
+  });
+  if (namedAtt) {
+    return `첨부파일: ${namedAtt.filename}${pageSuffix}`;
   }
-  if (sourceFile === 'subject' || sourceFile === 'mail_subject') {
+
+  if (SUBJECT_SOURCE_TOKENS.has(token)) {
     return '메일제목';
   }
-  return `첨부파일: ${sourceFile}`;
+
+  // 명시적 파일명(구 토큰 제외) → 첨부
+  if (raw && !BODY_SOURCE_TOKENS.has(token) && !SUBJECT_SOURCE_TOKENS.has(token)) {
+    return `첨부파일: ${raw}${pageSuffix}`;
+  }
+
+  // source_file이 비어 있거나 input/body 등 모호한 경우 → 근거문구로 위치 추론
+  if (evidence) {
+    if (subject && containsLoose(subject, evidence)) return '메일제목';
+    if (body && containsLoose(body, evidence)) return '메일본문';
+  }
+
+  if (BODY_SOURCE_TOKENS.has(token) || !raw) {
+    if (body.trim()) return '메일본문';
+    if (attachments.length === 1) {
+      return `첨부파일: ${attachments[0].filename || '첨부'}${pageSuffix}`;
+    }
+    if (attachments.length > 1) return `첨부파일${pageSuffix}`;
+    return '메일본문';
+  }
+
+  return raw ? `첨부파일: ${raw}${pageSuffix}` : '출처 미상';
+}
+
+function evidenceSnippet(field: ExtractedField): string {
+  const e = (field.evidence_text || '').trim();
+  if (e) return e;
+  const ov = (field.original_value || '').trim();
+  if (ov) return ov;
+  if (field.value != null && field.value !== '') return String(field.value);
+  return '';
 }
 
 function SourceEvidenceModal({
   mail,
   row,
+  attachments,
   onClose,
 }: {
   mail: MailMessage;
   row: KvRow;
+  attachments: MailAttachment[];
   onClose: () => void;
 }) {
   const field = row.field;
-  const bodyPreview = displayMailBody(mail).replace(/\s+/g, ' ').trim().slice(0, 400);
-  const evidence = (field.evidence_text || '').trim();
-  const source = sourceKindLabel(field.source_file);
+  const source = resolveFieldSource(field, mail, attachments);
+  const evidence = evidenceSnippet(field);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4" onClick={onClose}>
@@ -136,44 +225,25 @@ function SourceEvidenceModal({
             <p className="text-[11px] text-indigo-500 mb-0.5">추출 값</p>
             <p className="font-medium text-indigo-950 break-words">{row.valueDisplay}</p>
           </div>
-          <div>
-            <p className="text-[11px] text-slate-400 mb-0.5">메일제목</p>
-            <p className="text-slate-800 break-words">{mail.subject || '(제목 없음)'}</p>
-          </div>
+
           <div>
             <p className="text-[11px] text-slate-400 mb-0.5">출처</p>
-            <p className="text-slate-800">
-              {source}
-              {field.source_page != null ? ` · ${field.source_page}페이지` : ''}
-            </p>
+            <p className="text-slate-800 font-medium">{source}</p>
           </div>
-          {field.original_key && (
-            <div>
-              <p className="text-[11px] text-slate-400 mb-0.5">원문 키 → 원문 값</p>
-              <p className="font-mono text-xs text-slate-700 break-all">
-                {field.original_key}
-                {field.original_value != null && field.original_value !== ''
-                  ? ` → ${String(field.original_value)}`
-                  : ''}
-              </p>
-            </div>
-          )}
+
           <div>
-            <p className="text-[11px] text-slate-400 mb-0.5">근거 문구 (Evidence)</p>
-            <p className="text-slate-700 whitespace-pre-wrap break-words bg-slate-50 rounded-xl p-3 text-xs">
+            <p className="text-[11px] text-slate-400 mb-0.5">근거 문구</p>
+            <p className="text-slate-700 whitespace-pre-wrap break-words bg-slate-50 rounded-xl p-3 text-xs leading-relaxed">
               {evidence || '(근거 문구 없음 — 모델이 evidence를 비웠을 수 있습니다)'}
             </p>
           </div>
+
           <div>
-            <p className="text-[11px] text-slate-400 mb-0.5">메일본문 (일부)</p>
-            <p className="text-slate-600 text-xs whitespace-pre-wrap break-words">
-              {bodyPreview || '—'}
-              {bodyPreview.length >= 400 ? '…' : ''}
+            <p className="text-[11px] text-slate-400 mb-0.5">필드 신뢰도</p>
+            <p className="text-slate-800 tabular-nums">
+              {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '—'}
             </p>
           </div>
-          {row.confidence != null && (
-            <p className="text-xs text-slate-500">필드 신뢰도 {Math.round(row.confidence * 100)}%</p>
-          )}
         </div>
       </div>
     </div>
@@ -183,13 +253,15 @@ function SourceEvidenceModal({
 export function ExtractionKvTable({
   extraction,
   mail,
+  attachments = [],
   className = '',
 }: {
   extraction: CanonicalExtraction;
   mail: MailMessage;
+  attachments?: MailAttachment[];
   className?: string;
 }) {
-  const rows = flattenExtractionRows(extraction);
+  const rows = useMemo(() => flattenExtractionRows(extraction), [extraction]);
   const withValue = rows.filter(r => r.valueDisplay !== '—');
   const display = withValue.length ? withValue : rows;
   const [active, setActive] = useState<KvRow | null>(null);
@@ -201,37 +273,44 @@ export function ExtractionKvTable({
         <p className="text-[11px] sm:text-xs text-slate-400">값을 클릭하면 출처·근거를 봅니다</p>
       </div>
       <div className="overflow-x-auto border border-slate-100 rounded-xl -mx-0.5">
-        <table className="w-full text-xs sm:text-sm min-w-[280px]">
+        {/* 모바일: table-fixed로 키 폭 확보 / lg+: 자동 배분 */}
+        <table className="w-full text-xs sm:text-sm max-lg:table-fixed">
+          <colgroup>
+            <col className="max-lg:w-[16%]" />
+            <col className="max-lg:w-[36%]" />
+            <col className="max-lg:w-[30%]" />
+            <col className="max-lg:w-[18%]" />
+          </colgroup>
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="px-2 sm:px-3 py-2 text-left whitespace-nowrap">구분</th>
-              <th className="px-2 sm:px-3 py-2 text-left">키</th>
+              <th className="px-2.5 sm:px-3 py-2 text-left">키</th>
               <th className="px-2 sm:px-3 py-2 text-left">값</th>
-              <th className="px-2 sm:px-3 py-2 text-right whitespace-nowrap">신뢰도</th>
+              <th className="px-1.5 sm:px-3 py-2 text-right whitespace-nowrap">신뢰도</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {display.map(row => (
               <tr key={row.id} className="hover:bg-slate-50/80">
-                <td className="px-2 sm:px-3 py-2 text-slate-400 whitespace-nowrap align-top">{row.group}</td>
-                <td className="px-2 sm:px-3 py-2 align-top">
-                  <div className="font-medium text-slate-800 break-words">{row.keyLabel}</div>
+                <td className="px-2 sm:px-3 py-2 text-slate-400 align-top break-keep">{row.group}</td>
+                <td className="px-2.5 sm:px-3 py-2 align-top min-w-0">
+                  <div className="font-medium text-slate-800 break-keep">{row.keyLabel}</div>
                   {row.originalKey && (
-                    <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono break-all">
+                    <div className="mt-0.5 text-[10px] sm:text-[11px] text-slate-400 font-mono truncate" title={row.originalKey}>
                       {row.originalKey}
                     </div>
                   )}
                 </td>
-                <td className="px-2 sm:px-3 py-2 text-slate-800 align-top">
+                <td className="px-2 sm:px-3 py-2 text-slate-800 align-top min-w-0">
                   <button
                     type="button"
                     onClick={() => setActive(row)}
-                    className="text-left border-b border-dotted border-indigo-300 text-indigo-800 hover:text-indigo-950 break-words"
+                    className="text-left border-b border-dotted border-indigo-300 text-indigo-800 hover:text-indigo-950 break-words max-w-full"
                   >
                     {row.valueDisplay}
                   </button>
                 </td>
-                <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-slate-500 align-top whitespace-nowrap">
+                <td className="px-1.5 sm:px-3 py-2 text-right tabular-nums text-slate-500 align-top whitespace-nowrap">
                   {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '—'}
                 </td>
               </tr>
@@ -239,7 +318,14 @@ export function ExtractionKvTable({
           </tbody>
         </table>
       </div>
-      {active && <SourceEvidenceModal mail={mail} row={active} onClose={() => setActive(null)} />}
+      {active && (
+        <SourceEvidenceModal
+          mail={mail}
+          row={active}
+          attachments={attachments}
+          onClose={() => setActive(null)}
+        />
+      )}
     </section>
   );
 }

@@ -385,7 +385,12 @@ export function MailReviewView() {
         </section>
 
         {extraction ? (
-          <ExtractionKvTable extraction={extraction} mail={mail} className="lg:sticky lg:top-2" />
+          <ExtractionKvTable
+            extraction={extraction}
+            mail={mail}
+            attachments={attachments}
+            className="lg:sticky lg:top-2"
+          />
         ) : (
           <section className="bg-white rounded-2xl border border-slate-200 p-4 text-sm text-slate-400 min-w-0">
             키·값 매칭 표는 추출 결과가 있으면 여기에 표시됩니다.
