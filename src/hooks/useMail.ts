@@ -191,9 +191,23 @@ export function useMail() {
       ...(attachmentTexts?.map(a => a.text) || []),
     ].filter(Boolean).join('\n');
 
+    // 분류·추출 모두 동일 첨부 사용 (본문만으로 비견적 오판 방지)
+    const jobFiles = [
+      ...(opts?.files || []),
+      ...(attachmentTexts?.map(a => ({
+        filename: a.filename,
+        text: a.text,
+        mime_type: 'text/plain',
+      })) || []),
+    ];
+
     try {
-      onProgress?.('문서 분류 중…');
-      const cls = await aiDocClient.classify(text);
+      onProgress?.(
+        jobFiles.length
+          ? `문서 분류 중… (첨부 ${jobFiles.length}개)`
+          : '문서 분류 중…',
+      );
+      const cls = await aiDocClient.classify(text, jobFiles.length ? jobFiles : undefined);
       const isRfq = cls.data.document_type === 'quotation_request';
 
       await supabase
@@ -212,14 +226,6 @@ export function useMail() {
       }
 
       onProgress?.('정보 추출 중…');
-      const jobFiles = [
-        ...(opts?.files || []),
-        ...(attachmentTexts?.map(a => ({
-          filename: a.filename,
-          text: a.text,
-          mime_type: 'text/plain',
-        })) || []),
-      ];
       const job = await aiDocClient.createJob({
         text,
         files: jobFiles.length ? jobFiles : undefined,

@@ -94,14 +94,28 @@ export interface AiJob {
   error?: string;
 }
 
+export type AiDocInputFile = {
+  filename: string;
+  text?: string;
+  mime_type?: string;
+  content_base64?: string;
+};
+
 export const aiDocClient = {
-  classify: (text: string) =>
+  /** 본문 + 첨부(PDF 등)를 함께 넘겨 분류. files 없으면 본문만. */
+  classify: (text: string, files?: AiDocInputFile[]) =>
     request<{ data: { document_type: string; confidence: number; language: string } }>(
       '/v1/documents/classify',
-      { method: 'POST', body: JSON.stringify({ text }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          text,
+          ...(files?.length ? { files } : {}),
+        }),
+      },
     ),
 
-  extract: (text: string, files?: { filename: string; text?: string; mime_type?: string }[]) =>
+  extract: (text: string, files?: AiDocInputFile[]) =>
     request<{ data: CanonicalExtraction }>('/v1/documents/extract', {
       method: 'POST',
       body: JSON.stringify({ text, files }),
@@ -109,7 +123,7 @@ export const aiDocClient = {
 
   createJob: (payload: {
     text?: string;
-    files?: { filename: string; text?: string; mime_type?: string; content_base64?: string }[];
+    files?: AiDocInputFile[];
     webhook_url?: string;
   }) =>
     request<{ job_id: string; status: string }>('/v1/jobs', {
