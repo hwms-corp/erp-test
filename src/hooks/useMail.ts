@@ -23,6 +23,9 @@ export function useMail() {
       .from('mail_messages')
       .select('*', { count: 'exact' })
       .is('deleted_at', null)
+      // 즐겨찾기 최상단, 최근 별표가 더 위, 그다음 수신시각
+      .order('is_starred', { ascending: false })
+      .order('starred_at', { ascending: false, nullsFirst: false })
       .order('received_at', { ascending: false })
       .range(from, to);
 
@@ -424,6 +427,22 @@ export function useMail() {
     };
   }, []);
 
+  /** 즐겨찾기 토글 — 별표 시 starred_at=now (최근 별표가 목록 최상단) */
+  const setMailStarred = useCallback(async (id: number, starred: boolean) => {
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .update({
+        is_starred: starred,
+        starred_at: starred ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .is('deleted_at', null)
+      .select()
+      .maybeSingle();
+    return { data: data as MailMessage | null, error };
+  }, []);
+
   return {
     fetchMails,
     fetchMail,
@@ -431,6 +450,7 @@ export function useMail() {
     fetchAttachments,
     markMailRead,
     softDeleteMails,
+    setMailStarred,
     upsertMail,
     runAiPipeline,
     saveExtraction,

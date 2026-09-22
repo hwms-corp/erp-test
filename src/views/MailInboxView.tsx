@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -96,7 +96,7 @@ const AI_STATUS_TONE: Record<AiHealthStatus, string> = {
 
 export function MailInboxView() {
   const { user } = useAuth();
-  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails } = useMail();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, setMailStarred } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -285,6 +285,32 @@ export function MailInboxView() {
       else next.add(id);
       return next;
     });
+  };
+
+  const toggleStar = async (id: number, currentlyStarred: boolean) => {
+    const next = !currentlyStarred;
+    // 낙관적 UI
+    setMails(prev => {
+      const updated = prev.map(m =>
+        m.id === id
+          ? { ...m, is_starred: next, starred_at: next ? new Date().toISOString() : null }
+          : m,
+      );
+      return [...updated].sort((a, b) => {
+        const as = a.is_starred ? 1 : 0;
+        const bs = b.is_starred ? 1 : 0;
+        if (as !== bs) return bs - as;
+        const at = a.starred_at ? new Date(a.starred_at).getTime() : 0;
+        const bt = b.starred_at ? new Date(b.starred_at).getTime() : 0;
+        if (at !== bt) return bt - at;
+        return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
+      });
+    });
+    const { error } = await setMailStarred(id, next);
+    if (error) {
+      // 롤백: 서버 기준으로 다시 로드
+      void load({ silent: true });
+    }
   };
 
   const deleteSelected = async () => {
@@ -491,6 +517,18 @@ export function MailInboxView() {
                 />
                 <button
                   type="button"
+                  className={`mt-0.5 p-0.5 shrink-0 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
+                  aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
+                  aria-pressed={!!m.is_starred}
+                  onClick={e => {
+                    e.stopPropagation();
+                    void toggleStar(m.id, !!m.is_starred);
+                  }}
+                >
+                  <Star className={`w-5 h-5 ${m.is_starred ? 'fill-amber-400' : ''}`} />
+                </button>
+                <button
+                  type="button"
                   className="min-w-0 flex-1 text-left"
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
@@ -540,6 +578,9 @@ export function MailInboxView() {
                   />
                 </div>
               </th>
+              <th className="px-1 py-2 w-10 text-center" aria-label="즐겨찾기">
+                <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
+              </th>
               <th className="px-3 py-2">제목</th>
               <th className="px-2 py-2 w-[16%]">발신자</th>
               <th className="px-2 py-2 w-[10.5rem] whitespace-nowrap">수신시각</th>
@@ -549,10 +590,10 @@ export function MailInboxView() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && mails.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {!loading && mails.map(m => {
               const unread = m.is_read !== true;
@@ -574,6 +615,20 @@ export function MailInboxView() {
                         ariaLabel={`${m.subject || '메일'} 선택`}
                       />
                     </div>
+                  </td>
+                  <td className="px-1 py-1.5 text-center align-middle">
+                    <button
+                      type="button"
+                      className={`p-1 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
+                      aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
+                      aria-pressed={!!m.is_starred}
+                      onClick={e => {
+                        e.stopPropagation();
+                        void toggleStar(m.id, !!m.is_starred);
+                      }}
+                    >
+                      <Star className={`w-4 h-4 mx-auto ${m.is_starred ? 'fill-amber-400' : ''}`} />
+                    </button>
                   </td>
                   <td className={`px-3 py-1.5 align-middle ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                     <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
