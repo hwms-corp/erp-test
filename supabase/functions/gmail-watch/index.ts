@@ -491,6 +491,24 @@ function isOcrCandidate(filename: string, mime: string | null): boolean {
   );
 }
 
+/** 높을수록 우선. CID 인라인 이미지는 -1(제외). PDF/xlsx > 일반 이미지 */
+function ocrCandidatePriority(
+  filename: string,
+  mime: string | null,
+  contentId: string | null,
+): number {
+  const m = (mime || '').toLowerCase();
+  const f = filename.toLowerCase();
+  const isImage = m.startsWith('image/') || /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f);
+  if (contentId && isImage) return -1;
+  if (m.includes('pdf') || f.endsWith('.pdf')) return 100;
+  if (/\.(xlsx|xlsm|xls)$/i.test(f) || m.includes('spreadsheet')) return 90;
+  if (/\.(docx|doc)$/i.test(f) || m.includes('wordprocessing') || m.includes('msword')) return 80;
+  if (/\.(csv|txt|eml)$/i.test(f) || m.startsWith('text/')) return 70;
+  if (isImage) return 20;
+  return 10;
+}
+
 function b64urlToStd(data: string): string {
   const pad = '='.repeat((4 - (data.length % 4)) % 4);
   return (data + pad).replace(/-/g, '+').replace(/_/g, '/');
@@ -522,10 +540,17 @@ async function collectOcrFiles(
   attachments: ReturnType<typeof collectAttachmentMeta>,
   accessToken: string,
 ): Promise<{ filename: string; mime_type?: string; content_base64: string }[]> {
+  const ranked = [...attachments]
+    .map(att => ({
+      att,
+      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id),
+    }))
+    .filter(x => x.priority >= 0 && isOcrCandidate(x.att.filename, x.att.mime_type))
+    .sort((a, b) => b.priority - a.priority || a.att.filename.localeCompare(b.att.filename));
+
   const files: { filename: string; mime_type?: string; content_base64: string }[] = [];
-  for (const att of attachments) {
+  for (const { att, priority } of ranked) {
     if (files.length >= MAX_OCR_FILES) break;
-    if (!isOcrCandidate(att.filename, att.mime_type)) continue;
     if (att.size_bytes != null && att.size_bytes > MAX_OCR_BYTES) continue;
     try {
       const b64 = await loadAttachmentBase64(messageId, att, accessToken);
@@ -537,10 +562,14 @@ async function collectOcrFiles(
         mime_type: att.mime_type ?? undefined,
         content_base64: b64,
       });
+      console.log(`OCR pick p=${priority} ${att.filename} (~${Math.round(approx / 1024)}KB)`);
     } catch (e) {
       console.error('attachment download failed', att.filename, e);
     }
   }
+  console.log(
+    `OCR files=${files.length}/${ranked.length} names=[${files.map(f => f.filename).join(', ')}]`,
+  );
   return files;
 }
 
@@ -676,10 +705,32 @@ async function runAiForMail(
       '/v1/documents/extract',
       payload,
     );
+    const itemCount = (extracted.data.items || []).filter(
+      i => i.product_name?.value && String(i.product_name.value).trim(),
+    ).length;
     const status = decideProcessStatus(extracted.data);
     const finalStatus = await matchAndMaybeAutoRegister(sb, mailId, extracted.data, status);
 
-    console.log(`AI mail ${mailId} → ${finalStatus} (files=${files?.length ?? 0})`);
+    // 첨부는 있었는데 품목 0건이면 검토 사유를 남김 (이미 자동등록 사유가 있으면 유지)
+    if (hasFiles && itemCount === 0 && finalStatus === 'review_required') {
+      const { data: cur } = await sb
+        .from('mail_messages')
+        .select('status_reason')
+        .eq('id', mailId)
+        .maybeSingle();
+      if (!cur?.status_reason) {
+        await sb
+          .from('mail_messages')
+          .update({
+            status_reason: `첨부 ${files!.length}개 전달됐으나 의뢰 품목을 추출하지 못함 — 검토 필요`,
+          })
+          .eq('id', mailId);
+      }
+    }
+
+    console.log(
+      `AI mail ${mailId} → ${finalStatus} (files=${files?.length ?? 0} items=${itemCount} names=[${(files ?? []).map(f => f.filename).join(', ')}])`,
+    );
     return { status: finalStatus };
   } catch (e) {
     const msg = String(e);

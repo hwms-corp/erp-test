@@ -85,6 +85,31 @@ export function isOcrCandidate(filename: string, mime: string | null | undefined
   );
 }
 
+/**
+ * OCR/추출 우선순위 (높을수록 먼저).
+ * CID 인라인 이미지(서명·로고)는 -1 → 제외.
+ * PDF/xlsx 가 인라인 이미지보다 앞선다.
+ */
+export function ocrCandidatePriority(
+  filename: string,
+  mime: string | null | undefined,
+  contentId?: string | null,
+): number {
+  const m = (mime || '').toLowerCase();
+  const f = filename.toLowerCase();
+  const isImage =
+    m.startsWith('image/') || /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f);
+  // 본문 삽입 이미지(서명/로고)는 견적 품목 소스가 아님
+  if (contentId && isImage) return -1;
+
+  if (m.includes('pdf') || f.endsWith('.pdf')) return 100;
+  if (/\.(xlsx|xlsm|xls)$/i.test(f) || m.includes('spreadsheet')) return 90;
+  if (/\.(docx|doc)$/i.test(f) || m.includes('wordprocessing') || m.includes('msword')) return 80;
+  if (/\.(csv|txt|eml)$/i.test(f) || m.startsWith('text/')) return 70;
+  if (isImage) return 20;
+  return 10;
+}
+
 export async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
   const bytes = new Uint8Array(buf);
@@ -99,15 +124,28 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 const MAX_OCR_FILES = 5;
 const MAX_OCR_BYTES = 8 * 1024 * 1024;
 
-/** 재실행용: Gmail에서 OCR 후보 첨부만 base64로 수집 */
+/** 재실행용: Gmail에서 OCR 후보 첨부만 base64로 수집 (문서형 우선) */
 export async function collectOcrFilesFromAttachments(
-  attachments: { id: number; filename: string; mime_type: string | null; size_bytes: number | null; gmail_attachment_id?: string | null }[],
+  attachments: {
+    id: number;
+    filename: string;
+    mime_type: string | null;
+    size_bytes: number | null;
+    gmail_attachment_id?: string | null;
+    content_id?: string | null;
+  }[],
 ): Promise<{ filename: string; mime_type?: string; content_base64: string }[]> {
+  const ranked = [...attachments]
+    .map(att => ({
+      att,
+      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id),
+    }))
+    .filter(x => x.priority >= 0 && !!x.att.gmail_attachment_id && isOcrCandidate(x.att.filename, x.att.mime_type))
+    .sort((a, b) => b.priority - a.priority || a.att.filename.localeCompare(b.att.filename));
+
   const files: { filename: string; mime_type?: string; content_base64: string }[] = [];
-  for (const att of attachments) {
+  for (const { att } of ranked) {
     if (files.length >= MAX_OCR_FILES) break;
-    if (!att.gmail_attachment_id) continue;
-    if (!isOcrCandidate(att.filename, att.mime_type)) continue;
     if (att.size_bytes != null && att.size_bytes > MAX_OCR_BYTES) continue;
     const result = await fetchGmailAttachment(att.id);
     if (!result.ok) continue;
