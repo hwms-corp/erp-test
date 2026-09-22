@@ -249,34 +249,37 @@ export function MailReviewView() {
   }
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-      <div className="flex flex-col gap-3">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 min-w-0">
+      <div className="flex flex-col gap-3 min-w-0">
         <div className="flex items-start gap-2 min-w-0">
-          <button type="button" onClick={() => navigate('/mail')} className="p-2 text-slate-500 hover:text-slate-800 shrink-0">
+          <button type="button" onClick={() => navigate('/mail')} className="p-2 -ml-1 text-slate-500 hover:text-slate-800 shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold text-slate-900 break-words">{mail.subject || '(제목 없음)'}</h2>
-            <p className="text-xs sm:text-sm text-slate-500 break-all">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <h2 className="text-base sm:text-xl font-bold text-slate-900 break-words leading-snug">
+              {mail.subject || '(제목 없음)'}
+            </h2>
+            <p className="text-[11px] sm:text-sm text-slate-500 break-all mt-0.5">
               {mail.from_addr} · {STATUS_LABEL[mail.process_status] || mail.process_status}
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full min-w-0">
           <button
             type="button"
             disabled={busy}
             onClick={() => void rerunAi()}
             title="분류·추출을 다시 실행합니다. 자동등록은 하지 않습니다."
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 min-w-0"
           >
-            <Sparkles className="w-4 h-4" /> {busy ? '재실행 중…' : '추출 재실행'}
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span className="truncate">{busy ? '재실행 중…' : '추출 재실행'}</span>
           </button>
           <button
             type="button"
             disabled={busy || !extraction}
             onClick={saveEdits}
-            className="px-3 py-2 rounded-xl text-sm bg-slate-800 text-white disabled:opacity-50"
+            className="px-2.5 py-2 rounded-xl text-xs sm:text-sm bg-slate-800 text-white disabled:opacity-50 min-w-0"
           >
             추출 저장
           </button>
@@ -284,29 +287,30 @@ export function MailReviewView() {
             type="button"
             disabled={busy || !extraction || mail.process_status === 'registered'}
             onClick={register}
-            className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs sm:text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 min-w-0"
           >
-            <CheckCircle2 className="w-4 h-4" /> 견적 등록
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span className="truncate">견적 등록</span>
           </button>
         </div>
       </div>
 
-      {msg && <div className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">{msg}</div>}
+      {msg && <div className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 break-words">{msg}</div>}
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-slate-800">원문 (이번 수신분)</h3>
+      {/* 상단: 본문 | KV */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 items-start">
+        <section className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 space-y-3 min-w-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <h3 className="font-semibold text-slate-800 text-sm sm:text-base">메일 본문</h3>
             {threadNav.total > 1 && (
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-1 text-[11px] sm:text-xs flex-wrap">
                 <button
                   type="button"
                   disabled={!threadNav.prev}
                   onClick={() => threadNav.prev && navigate(`/mail/${threadNav.prev.id}`)}
                   className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
-                  title={threadNav.prev ? (threadNav.prev.subject || '이전 메일') : '이전 메일 없음'}
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" /> 이전 메일
+                  <ChevronLeft className="w-3.5 h-3.5" /> 이전
                 </button>
                 <span className="text-slate-400 tabular-nums px-1">
                   {threadNav.index}/{threadNav.total}
@@ -316,15 +320,14 @@ export function MailReviewView() {
                   disabled={!threadNav.next}
                   onClick={() => threadNav.next && navigate(`/mail/${threadNav.next.id}`)}
                   className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
-                  title={threadNav.next ? (threadNav.next.subject || '이후 메일') : '이후 메일 없음'}
                 >
-                  이후 메일 <ChevronRight className="w-3.5 h-3.5" />
+                  이후 <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
           </div>
-          <p className="text-[11px] text-slate-400">
-            Gmail HTML 원문을 그대로 표시합니다(표·이미지 포함). 답장·전달 인용은 제외되며, 같은 스레드는 위 버튼으로 이동합니다.
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Gmail HTML 양식 그대로 표시합니다. 답장 인용은 가리고, 같은 스레드는 이전/이후로 이동합니다.
           </p>
           <MailHtmlBody
             bodyHtml={mail.body_html}
@@ -334,9 +337,9 @@ export function MailReviewView() {
           />
           {listedAttachments.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
-                <FileText className="w-4 h-4" /> 첨부파일
-                <span className="text-xs font-normal text-slate-400">(Gmail 연동 · Storage 미사용)</span>
+              <h4 className="text-sm font-medium text-slate-700 flex items-center gap-1.5 flex-wrap">
+                <FileText className="w-4 h-4 shrink-0" /> 첨부파일
+                <span className="text-xs font-normal text-slate-400">(Gmail 연동)</span>
               </h4>
               <ul className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
                 {listedAttachments.map(a => {
@@ -344,10 +347,10 @@ export function MailReviewView() {
                   const loading = attBusyId === a.id;
                   const missingId = !a.gmail_attachment_id;
                   return (
-                    <li key={a.id} className="flex items-center gap-2 px-3 py-2.5 bg-white text-sm">
+                    <li key={a.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2.5 bg-white text-sm min-w-0">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-slate-800">{a.filename}</div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-400 break-all">
                           {[a.mime_type, formatBytes(a.size_bytes)].filter(Boolean).join(' · ')}
                           {missingId && ' · 재동기화 필요'}
                         </div>
@@ -359,7 +362,6 @@ export function MailReviewView() {
                             disabled={loading || missingId || busy}
                             onClick={() => openAttachment(a, 'preview')}
                             className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                            title={missingId ? '첨부 ID 없음 — 메일 재수신 후 가능' : '미리보기'}
                           >
                             <Eye className="w-3.5 h-3.5" /> 미리보기
                           </button>
@@ -369,7 +371,6 @@ export function MailReviewView() {
                           disabled={loading || missingId || busy}
                           onClick={() => openAttachment(a, 'download')}
                           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                          title={missingId ? '첨부 ID 없음 — 메일 재수신 후 가능' : '다운로드'}
                         >
                           <Download className="w-3.5 h-3.5" /> 다운
                         </button>
@@ -382,169 +383,176 @@ export function MailReviewView() {
           )}
         </section>
 
-        <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">AI 추출 결과</h3>
-            {extraction && (
-              <span className="text-xs text-slate-500">
-                신뢰도 {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}
-              </span>
-            )}
-          </div>
-
-          {!extraction && (
-            <p className="text-sm text-slate-400">
-              추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">추출 재실행</span>을 눌러 주세요.
-            </p>
-          )}
-
-          {extraction && (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <label className="space-y-1 col-span-2">
-                  <span className="text-slate-500">문서번호 (견적의뢰서)</span>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    value={extraction.request.document_no?.value || ''}
-                    onChange={e => setExtraction({
-                      ...extraction,
-                      request: {
-                        ...extraction.request,
-                        document_no: {
-                          ...(extraction.request.document_no || {
-                            value: null, original_key: null, original_value: null, confidence: 0,
-                            source_file: null, source_page: null, evidence_text: null, language: null,
-                          }),
-                          value: e.target.value,
-                          confidence: 1,
-                        },
-                      },
-                    })}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-slate-500">거래처명</span>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    value={extraction.customer.name.value || ''}
-                    onChange={e => setExtraction({
-                      ...extraction,
-                      customer: {
-                        ...extraction.customer,
-                        name: { ...extraction.customer.name, value: e.target.value, confidence: 1 },
-                      },
-                    })}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-slate-500">담당</span>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    value={extraction.request.contact_person.value || ''}
-                    onChange={e => setExtraction({
-                      ...extraction,
-                      request: {
-                        ...extraction.request,
-                        contact_person: { ...extraction.request.contact_person, value: e.target.value, confidence: 1 },
-                      },
-                    })}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-slate-500">선명</span>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    value={extraction.request.vessel.value || ''}
-                    onChange={e => setExtraction({
-                      ...extraction,
-                      request: {
-                        ...extraction.request,
-                        vessel: { ...extraction.request.vessel, value: e.target.value, confidence: 1 },
-                      },
-                    })}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-slate-500">납기</span>
-                  <input
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                    value={extraction.request.delivery_date.value || ''}
-                    onChange={e => setExtraction({
-                      ...extraction,
-                      request: {
-                        ...extraction.request,
-                        delivery_date: { ...extraction.request.delivery_date, value: e.target.value, confidence: 1 },
-                      },
-                    })}
-                  />
-                </label>
-              </div>
-
-              <div>
-                <div className="text-sm font-medium text-slate-700 mb-2">품목</div>
-                <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-3 py-2 text-left">품명</th>
-                        <th className="px-3 py-2 text-left">사양</th>
-                        <th className="px-3 py-2 text-right">수량</th>
-                        <th className="px-3 py-2 text-left">단위</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {lines.map((l, i) => (
-                        <tr key={i}>
-                          <td className="px-3 py-2">{l.name}</td>
-                          <td className="px-3 py-2 text-slate-600">{l.spec}</td>
-                          <td className="px-3 py-2 text-right">{l.qty}</td>
-                          <td className="px-3 py-2">{l.unit}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-slate-700">거래처 *</div>
-                {candidates.length > 0 ? (
-                  <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5">
-                    AI 추천: {candidates.slice(0, 3).map(c =>
-                      `${c.partner_name} (${Math.round(c.score * 100)}%)`
-                    ).join(' · ')}
-                  </p>
-                ) : (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-                    자동 매칭 후보 없음 — 거래처 검색으로 직접 선택하세요.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowPartnerModal(true)}
-                  className={`${inp} text-left flex items-center justify-between`}
-                >
-                  <span className={selectedPartner ? 'text-slate-900 font-medium' : 'text-slate-400'}>
-                    {selectedPartner ? selectedPartner.name : '거래처 검색...'}
-                  </span>
-                  <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                </button>
-                {selectedPartner && (
-                  <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-600 space-y-1">
-                    <p><span className="text-slate-400">사업자번호:</span> {selectedPartner.biz_no}</p>
-                    <p><span className="text-slate-400">대표자:</span> {selectedPartner.rep}</p>
-                    {selectedPartner.addr && (
-                      <p><span className="text-slate-400">주소:</span> {selectedPartner.addr}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </section>
+        {extraction ? (
+          <ExtractionKvTable extraction={extraction} mail={mail} className="lg:sticky lg:top-2" />
+        ) : (
+          <section className="bg-white rounded-2xl border border-slate-200 p-4 text-sm text-slate-400 min-w-0">
+            키·값 매칭 표는 추출 결과가 있으면 여기에 표시됩니다.
+          </section>
+        )}
       </div>
 
-      {extraction && <ExtractionKvTable extraction={extraction} mail={mail} />}
+      {/* 하단: AI 추출 편집 (전체 폭) */}
+      <section className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 space-y-4 min-w-0 w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <h3 className="font-semibold text-slate-800 text-sm sm:text-base">AI 추출 결과 (편집)</h3>
+          {extraction && (
+            <span className="text-xs text-slate-500">
+              신뢰도 {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}
+            </span>
+          )}
+        </div>
+
+        {!extraction && (
+          <p className="text-sm text-slate-400">
+            추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">추출 재실행</span>을 눌러 주세요.
+          </p>
+        )}
+
+        {extraction && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+              <label className="space-y-1 sm:col-span-2 lg:col-span-3">
+                <span className="text-slate-500">문서번호 (견적의뢰서)</span>
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={extraction.request.document_no?.value || ''}
+                  onChange={e => setExtraction({
+                    ...extraction,
+                    request: {
+                      ...extraction.request,
+                      document_no: {
+                        ...(extraction.request.document_no || {
+                          value: null, original_key: null, original_value: null, confidence: 0,
+                          source_file: null, source_page: null, evidence_text: null, language: null,
+                        }),
+                        value: e.target.value,
+                        confidence: 1,
+                      },
+                    },
+                  })}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-slate-500">거래처명</span>
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={extraction.customer.name.value || ''}
+                  onChange={e => setExtraction({
+                    ...extraction,
+                    customer: {
+                      ...extraction.customer,
+                      name: { ...extraction.customer.name, value: e.target.value, confidence: 1 },
+                    },
+                  })}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-slate-500">담당</span>
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={extraction.request.contact_person.value || ''}
+                  onChange={e => setExtraction({
+                    ...extraction,
+                    request: {
+                      ...extraction.request,
+                      contact_person: { ...extraction.request.contact_person, value: e.target.value, confidence: 1 },
+                    },
+                  })}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-slate-500">선명</span>
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={extraction.request.vessel.value || ''}
+                  onChange={e => setExtraction({
+                    ...extraction,
+                    request: {
+                      ...extraction.request,
+                      vessel: { ...extraction.request.vessel, value: e.target.value, confidence: 1 },
+                    },
+                  })}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-slate-500">납기</span>
+                <input
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                  value={extraction.request.delivery_date.value || ''}
+                  onChange={e => setExtraction({
+                    ...extraction,
+                    request: {
+                      ...extraction.request,
+                      delivery_date: { ...extraction.request.delivery_date, value: e.target.value, confidence: 1 },
+                    },
+                  })}
+                />
+              </label>
+            </div>
+
+            <div>
+              <div className="text-sm font-medium text-slate-700 mb-2">품목</div>
+              <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead className="bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">품명</th>
+                      <th className="px-3 py-2 text-left">사양</th>
+                      <th className="px-3 py-2 text-right">수량</th>
+                      <th className="px-3 py-2 text-left">단위</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {lines.map((l, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2">{l.name}</td>
+                        <td className="px-3 py-2 text-slate-600">{l.spec}</td>
+                        <td className="px-3 py-2 text-right">{l.qty}</td>
+                        <td className="px-3 py-2">{l.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-w-xl">
+              <div className="text-sm font-medium text-slate-700">거래처 *</div>
+              {candidates.length > 0 ? (
+                <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 break-words">
+                  AI 추천: {candidates.slice(0, 3).map(c =>
+                    `${c.partner_name} (${Math.round(c.score * 100)}%)`
+                  ).join(' · ')}
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+                  자동 매칭 후보 없음 — 거래처 검색으로 직접 선택하세요.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowPartnerModal(true)}
+                className={`${inp} text-left flex items-center justify-between`}
+              >
+                <span className={selectedPartner ? 'text-slate-900 font-medium' : 'text-slate-400'}>
+                  {selectedPartner ? selectedPartner.name : '거래처 검색...'}
+                </span>
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+              {selectedPartner && (
+                <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-600 space-y-1">
+                  <p><span className="text-slate-400">사업자번호:</span> {selectedPartner.biz_no}</p>
+                  <p><span className="text-slate-400">대표자:</span> {selectedPartner.rep}</p>
+                  {selectedPartner.addr && (
+                    <p className="break-words"><span className="text-slate-400">주소:</span> {selectedPartner.addr}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       {showPartnerModal && (
         <PartnerSearchModal

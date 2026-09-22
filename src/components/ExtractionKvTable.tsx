@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useState } from 'react';
+import { X } from 'lucide-react';
 import type { CanonicalExtraction, ExtractedField, MailMessage } from '@/types/aiMail';
 import { displayMailBody } from '@/lib/mailBody';
 
@@ -91,7 +92,7 @@ export function flattenExtractionRows(extraction: CanonicalExtraction): KvRow[] 
   return rows;
 }
 
-function sourceKindLabel(sourceFile: string | null, subject: string | null): string {
+function sourceKindLabel(sourceFile: string | null): string {
   if (!sourceFile || sourceFile === 'body' || sourceFile === 'mail_body' || sourceFile === 'email') {
     return '메일본문';
   }
@@ -101,117 +102,136 @@ function sourceKindLabel(sourceFile: string | null, subject: string | null): str
   return `첨부파일: ${sourceFile}`;
 }
 
-function SourceTooltip({
+function SourceEvidenceModal({
   mail,
-  field,
-  children,
+  row,
+  onClose,
 }: {
   mail: MailMessage;
-  field: ExtractedField;
-  children: ReactNode;
+  row: KvRow;
+  onClose: () => void;
 }) {
-  const bodyPreview = displayMailBody(mail).replace(/\s+/g, ' ').trim().slice(0, 220);
-  const evidence = (field.evidence_text || '').replace(/\s+/g, ' ').trim().slice(0, 220);
-  const source = sourceKindLabel(field.source_file, mail.subject);
+  const field = row.field;
+  const bodyPreview = displayMailBody(mail).replace(/\s+/g, ' ').trim().slice(0, 400);
+  const evidence = (field.evidence_text || '').trim();
+  const source = sourceKindLabel(field.source_file);
 
   return (
-    <span className="relative group/value inline-block max-w-full">
-      {children}
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute left-0 bottom-full z-30 mb-2 hidden w-80 max-w-[min(20rem,70vw)] rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-700 shadow-lg group-hover/value:block"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/45 p-0 sm:p-4" onClick={onClose}>
+      <div
+        className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-xl max-h-[85vh] overflow-auto"
+        onClick={e => e.stopPropagation()}
       >
-        <div className="space-y-1.5">
-          <p>
-            <span className="text-slate-400">메일제목</span>
-            <br />
-            <span className="font-medium text-slate-800">{mail.subject || '(제목 없음)'}</span>
-          </p>
-          <p>
-            <span className="text-slate-400">출처</span>
-            <br />
-            <span className="font-medium text-slate-800">{source}</span>
-            {field.source_page != null && (
-              <span className="text-slate-500"> · {field.source_page}페이지</span>
-            )}
-          </p>
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400">{row.group} · {row.keyLabel}</p>
+            <h3 className="font-semibold text-slate-900 truncate">출처 · 매칭 근거</h3>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" aria-label="닫기">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3 text-sm">
+          <div className="rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2">
+            <p className="text-[11px] text-indigo-500 mb-0.5">추출 값</p>
+            <p className="font-medium text-indigo-950 break-words">{row.valueDisplay}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-400 mb-0.5">메일제목</p>
+            <p className="text-slate-800 break-words">{mail.subject || '(제목 없음)'}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-400 mb-0.5">출처</p>
+            <p className="text-slate-800">
+              {source}
+              {field.source_page != null ? ` · ${field.source_page}페이지` : ''}
+            </p>
+          </div>
           {field.original_key && (
-            <p>
-              <span className="text-slate-400">원문 키</span>
-              <br />
-              <span className="font-mono text-[11px] text-slate-700">{field.original_key}</span>
-              {field.original_value != null && field.original_value !== '' && (
-                <span className="text-slate-500"> → {String(field.original_value)}</span>
-              )}
-            </p>
+            <div>
+              <p className="text-[11px] text-slate-400 mb-0.5">원문 키 → 원문 값</p>
+              <p className="font-mono text-xs text-slate-700 break-all">
+                {field.original_key}
+                {field.original_value != null && field.original_value !== ''
+                  ? ` → ${String(field.original_value)}`
+                  : ''}
+              </p>
+            </div>
           )}
-          {evidence && (
-            <p>
-              <span className="text-slate-400">근거 문구</span>
-              <br />
-              <span className="text-slate-700">{evidence}{evidence.length >= 220 ? '…' : ''}</span>
+          <div>
+            <p className="text-[11px] text-slate-400 mb-0.5">근거 문구 (Evidence)</p>
+            <p className="text-slate-700 whitespace-pre-wrap break-words bg-slate-50 rounded-xl p-3 text-xs">
+              {evidence || '(근거 문구 없음 — 모델이 evidence를 비웠을 수 있습니다)'}
             </p>
-          )}
-          {bodyPreview && (
-            <p>
-              <span className="text-slate-400">메일본문 (일부)</span>
-              <br />
-              <span className="text-slate-600">{bodyPreview}{bodyPreview.length >= 220 ? '…' : ''}</span>
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-400 mb-0.5">메일본문 (일부)</p>
+            <p className="text-slate-600 text-xs whitespace-pre-wrap break-words">
+              {bodyPreview || '—'}
+              {bodyPreview.length >= 400 ? '…' : ''}
             </p>
+          </div>
+          {row.confidence != null && (
+            <p className="text-xs text-slate-500">필드 신뢰도 {Math.round(row.confidence * 100)}%</p>
           )}
         </div>
-      </span>
-    </span>
+      </div>
+    </div>
   );
 }
 
 export function ExtractionKvTable({
   extraction,
   mail,
+  className = '',
 }: {
   extraction: CanonicalExtraction;
   mail: MailMessage;
+  className?: string;
 }) {
   const rows = flattenExtractionRows(extraction);
   const withValue = rows.filter(r => r.valueDisplay !== '—');
   const display = withValue.length ? withValue : rows;
+  const [active, setActive] = useState<KvRow | null>(null);
 
   return (
-    <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-slate-800">추출 상세 (키 · 값)</h3>
-        <p className="text-xs text-slate-400">값에 마우스를 올리면 출처를 볼 수 있습니다</p>
+    <section className={`bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 space-y-3 min-w-0 ${className}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+        <h3 className="font-semibold text-slate-800 text-sm sm:text-base">키 · 값 매칭</h3>
+        <p className="text-[11px] sm:text-xs text-slate-400">값을 클릭하면 출처·근거를 봅니다</p>
       </div>
-      <div className="overflow-x-auto border border-slate-100 rounded-xl">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto border border-slate-100 rounded-xl -mx-0.5">
+        <table className="w-full text-xs sm:text-sm min-w-[280px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
-              <th className="px-3 py-2 text-left w-24">구분</th>
-              <th className="px-3 py-2 text-left w-[30%]">키</th>
-              <th className="px-3 py-2 text-left">값</th>
-              <th className="px-3 py-2 text-right w-20">신뢰도</th>
+              <th className="px-2 sm:px-3 py-2 text-left whitespace-nowrap">구분</th>
+              <th className="px-2 sm:px-3 py-2 text-left">키</th>
+              <th className="px-2 sm:px-3 py-2 text-left">값</th>
+              <th className="px-2 sm:px-3 py-2 text-right whitespace-nowrap">신뢰도</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {display.map(row => (
               <tr key={row.id} className="hover:bg-slate-50/80">
-                <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{row.group}</td>
-                <td className="px-3 py-2">
-                  <div className="font-medium text-slate-800">{row.keyLabel}</div>
+                <td className="px-2 sm:px-3 py-2 text-slate-400 whitespace-nowrap align-top">{row.group}</td>
+                <td className="px-2 sm:px-3 py-2 align-top">
+                  <div className="font-medium text-slate-800 break-words">{row.keyLabel}</div>
                   {row.originalKey && (
-                    <div className="text-[11px] text-slate-400 font-mono truncate" title={row.originalKey}>
+                    <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono break-all">
                       {row.originalKey}
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2 text-slate-800">
-                  <SourceTooltip mail={mail} field={row.field}>
-                    <span className="border-b border-dotted border-slate-300 cursor-help">
-                      {row.valueDisplay}
-                    </span>
-                  </SourceTooltip>
+                <td className="px-2 sm:px-3 py-2 text-slate-800 align-top">
+                  <button
+                    type="button"
+                    onClick={() => setActive(row)}
+                    className="text-left border-b border-dotted border-indigo-300 text-indigo-800 hover:text-indigo-950 break-words"
+                  >
+                    {row.valueDisplay}
+                  </button>
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-slate-500">
+                <td className="px-2 sm:px-3 py-2 text-right tabular-nums text-slate-500 align-top whitespace-nowrap">
                   {row.confidence != null ? `${Math.round(row.confidence * 100)}%` : '—'}
                 </td>
               </tr>
@@ -219,6 +239,7 @@ export function ExtractionKvTable({
           </tbody>
         </table>
       </div>
+      {active && <SourceEvidenceModal mail={mail} row={active} onClose={() => setActive(null)} />}
     </section>
   );
 }

@@ -45,7 +45,7 @@ const PAGE_SIZE = 20;
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
-  online: 'Mail API 정상 동작',
+  online: 'Mail API 정상',
   offline: 'AI 연결 안 됨',
   unauthorized: 'API Key 오류',
   unconfigured: '미설정',
@@ -290,49 +290,51 @@ export function MailInboxView() {
         />
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 min-w-0">
         <div className="min-w-0">
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Inbox className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+          <h2 className="text-lg sm:text-2xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
+            <Inbox className="w-5 h-5 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
             <span className="truncate">AI 메일함</span>
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</p>
+          <p className="text-[11px] sm:text-sm text-slate-500 mt-1 leading-snug">
+            Gmail 견적의뢰 · AI 분류/추출 · 견적 초안
+          </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col gap-2 w-full min-w-0">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <span
               title={aiDetail || undefined}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] sm:text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
             >
               <span
-                className={`h-1.5 w-1.5 rounded-full ${
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                   aiStatus === 'online' ? 'bg-emerald-500'
                     : aiStatus === 'checking' ? 'bg-slate-400 animate-pulse'
                       : aiStatus === 'unauthorized' ? 'bg-amber-500' : 'bg-red-500'
                 }`}
               />
-              {AI_STATUS_LABEL[aiStatus]}
+              <span className="truncate">{AI_STATUS_LABEL[aiStatus]}</span>
             </span>
             <button
               type="button"
               onClick={() => setShowAiModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
             >
               <Plug className="w-3.5 h-3.5" /> AI 연동
             </button>
             <button
               type="button"
               onClick={() => { void load(); void refreshAiHealth(); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm border border-slate-200 bg-white hover:bg-slate-50 ml-auto sm:ml-0"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs border border-slate-200 bg-white hover:bg-slate-50"
             >
-              <RefreshCw className="w-4 h-4" /> 새로고침
+              <RefreshCw className="w-3.5 h-3.5" /> 새로고침
             </button>
           </div>
 
-          <div className="flex w-full sm:w-[15.5rem] sm:shrink-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-            <div className="min-w-0 flex-1">
+          <div className="flex w-full items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 min-w-0">
+            <div className="min-w-0 flex-1 overflow-hidden">
               <p className="text-xs font-semibold text-slate-800">견적 자동등록</p>
-              <p className="text-[11px] text-slate-500 whitespace-nowrap">
+              <p className="text-[11px] text-slate-500 truncate">
                 {autoRegister ? '활성 · AI 검토대기로 저장' : '비활성 (기본)'}
               </p>
             </div>
@@ -378,18 +380,18 @@ export function MailInboxView() {
             </button>
           ))}
         </div>
-        <div className="flex flex-col xs:flex-row sm:flex-row gap-2 sm:items-center sm:justify-end">
+        <div className="flex flex-col gap-2 w-full min-w-0">
           <button
             type="button"
             disabled={selectedIds.size === 0 || deleteBusy}
             onClick={() => void deleteSelected()}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed order-2 sm:order-1"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto sm:self-end"
           >
-            <Trash2 className="w-4 h-4" />
-            메일선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+            <Trash2 className="w-4 h-4 shrink-0" />
+            <span className="truncate">선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
           </button>
           <input
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full sm:w-56 order-1 sm:order-2"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0"
             placeholder="제목/발신자 검색"
             defaultValue={q}
             onKeyDown={e => {

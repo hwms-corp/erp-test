@@ -387,7 +387,7 @@ function stripQuotedReplyHtml(html: string | null | undefined): string {
   let out = html;
   out = out.replace(/<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>[\s\S]*$/i, '');
   out = out.replace(/<div[^>]*class="[^"]*gmail_extra[^"]*"[^>]*>[\s\S]*$/i, '');
-  out = out.replace(/<blockquote[\s\S]*$/i, '');
+  out = out.replace(/<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*$/i, '');
   return out.trim();
 }
 
@@ -814,8 +814,9 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       const collected = collectText(msg.payload as GmailPayload);
       const textRaw = collected.text;
       const htmlRaw = collected.html;
+      // DB에는 HTML 원문 최대한 보존 (인용 제거는 화면에서)
       const text = stripQuotedReplyText(textRaw) || null;
-      const html = stripQuotedReplyHtml(htmlRaw) || null;
+      const html = htmlRaw || null;
       const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
       const internalDate = msg.internalDate
         ? new Date(Number(msg.internalDate)).toISOString()

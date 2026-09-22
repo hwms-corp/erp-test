@@ -58,13 +58,19 @@ export function stripQuotedReplyText(text: string | null | undefined): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** HTML: gmail_quote / blockquote 이후 제거 */
+/** HTML: Gmail/Outlook 인용 블록만 제거 — 본문 표·스타일은 유지 */
 export function stripQuotedReplyHtml(html: string | null | undefined): string {
   if (!html) return '';
   let out = html;
+  // Gmail 인용
   out = out.replace(/<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>[\s\S]*$/i, '');
   out = out.replace(/<div[^>]*class="[^"]*gmail_extra[^"]*"[^>]*>[\s\S]*$/i, '');
-  out = out.replace(/<blockquote[\s\S]*$/i, '');
+  out = out.replace(/<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*$/i, '');
+  // Outlook / Apple Mail 흔한 인용
+  out = out.replace(/<div[^>]*id="?appendonsend"?[^>]*>[\s\S]*$/i, '');
+  out = out.replace(/<div[^>]*class="[^"]*OutlookMessageHeader[^"]*"[^>]*>[\s\S]*$/i, '');
+  out = out.replace(/<hr[^>]*id="?reply-insert[^>]*>[\s\S]*$/i, '');
+  // blockquote 전체 삭제는 하지 않음(본문 레이아웃 파괴) — gmail_quote 안의 것만 이미 제거됨
   out = out.replace(/<!--\s*Previous message[\s\S]*$/i, '');
   return out.trim();
 }
@@ -115,28 +121,38 @@ export function sanitizeMailHtml(html: string): string {
   return doc.body.innerHTML;
 }
 
-/** iframe srcDoc용 문서 래핑 — 표/이미지 레이아웃 유지 */
+/** iframe srcDoc용 문서 래핑 — Gmail 표/이미지/인라인 스타일 유지 */
 export function wrapMailHtmlDocument(bodyInnerHtml: string): string {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<base target="_blank" />
+<base target="_blank" rel="noopener" />
 <style>
-  html, body { margin: 0; padding: 0; }
+  html, body { margin: 0; padding: 8px; background: #fff; }
   body {
-    font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    font-family: "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
     font-size: 14px;
-    line-height: 1.55;
-    color: #1e293b;
+    line-height: 1.5;
+    color: #222;
     word-break: break-word;
+    overflow-wrap: anywhere;
   }
-  img { max-width: 100%; height: auto; }
+  img { max-width: 100% !important; height: auto !important; }
   table { border-collapse: collapse; max-width: 100%; }
   td, th { word-break: break-word; }
-  a { color: #3730a3; }
-  pre { white-space: pre-wrap; word-break: break-word; }
+  a { color: #1a73e8; }
+  pre, code { white-space: pre-wrap; word-break: break-word; }
 </style>
 </head><body>${bodyInnerHtml}</body></html>`;
+}
+
+/** 텍스트만 있을 때 최소한의 HTML 표시 */
+export function plainTextToHtml(text: string): string {
+  const esc = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<div style="white-space:pre-wrap;font-family:inherit">${esc}</div>`;
 }
 
 export function extractCidRefs(html: string): string[] {
