@@ -250,27 +250,28 @@ export function MailReviewView() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 min-w-0">
-      <div className="flex flex-col gap-3 min-w-0">
-        <div className="flex items-start gap-2 min-w-0">
+      {/* 모바일·태블릿: 세로 / 데스크톱(lg+): 기존 가로 헤더 */}
+      <div className="flex flex-col gap-3 min-w-0 lg:flex-row lg:flex-wrap lg:items-center lg:gap-3">
+        <div className="flex items-start gap-2 min-w-0 lg:items-center lg:flex-1">
           <button type="button" onClick={() => navigate('/mail')} className="p-2 -ml-1 text-slate-500 hover:text-slate-800 shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 min-w-0 overflow-hidden">
-            <h2 className="text-base sm:text-xl font-bold text-slate-900 break-words leading-snug">
+            <h2 className="text-lg lg:text-xl font-bold text-slate-900 break-words lg:truncate leading-snug">
               {mail.subject || '(제목 없음)'}
             </h2>
-            <p className="text-[11px] sm:text-sm text-slate-500 break-all mt-0.5">
+            <p className="text-xs lg:text-sm text-slate-500 break-all lg:truncate mt-0.5">
               {mail.from_addr} · {STATUS_LABEL[mail.process_status] || mail.process_status}
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full min-w-0">
+        <div className="grid grid-cols-1 gap-2 w-full min-w-0 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
           <button
             type="button"
             disabled={busy}
             onClick={() => void rerunAi()}
             title="분류·추출을 다시 실행합니다. 자동등록은 하지 않습니다."
-            className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs sm:text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 min-w-0"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 min-w-0"
           >
             <Sparkles className="w-4 h-4 shrink-0" />
             <span className="truncate">{busy ? '재실행 중…' : '추출 재실행'}</span>
@@ -279,7 +280,7 @@ export function MailReviewView() {
             type="button"
             disabled={busy || !extraction}
             onClick={saveEdits}
-            className="px-2.5 py-2 rounded-xl text-xs sm:text-sm bg-slate-800 text-white disabled:opacity-50 min-w-0"
+            className="px-3 py-2 rounded-xl text-sm bg-slate-800 text-white disabled:opacity-50 min-w-0"
           >
             추출 저장
           </button>
@@ -287,7 +288,7 @@ export function MailReviewView() {
             type="button"
             disabled={busy || !extraction || mail.process_status === 'registered'}
             onClick={register}
-            className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs sm:text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 min-w-0"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 min-w-0"
           >
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span className="truncate">견적 등록</span>
@@ -299,18 +300,18 @@ export function MailReviewView() {
 
       {/* 상단: 본문 | KV */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 items-start">
-        <section className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 space-y-3 min-w-0">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <h3 className="font-semibold text-slate-800 text-sm sm:text-base">메일 본문</h3>
+        <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 min-w-0">
+          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
+            <h3 className="font-semibold text-slate-800">메일 본문</h3>
             {threadNav.total > 1 && (
-              <div className="flex items-center gap-1 text-[11px] sm:text-xs flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs flex-wrap">
                 <button
                   type="button"
                   disabled={!threadNav.prev}
                   onClick={() => threadNav.prev && navigate(`/mail/${threadNav.prev.id}`)}
                   className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" /> 이전
+                  <ChevronLeft className="w-3.5 h-3.5" /> 이전 메일
                 </button>
                 <span className="text-slate-400 tabular-nums px-1">
                   {threadNav.index}/{threadNav.total}
@@ -321,7 +322,7 @@ export function MailReviewView() {
                   onClick={() => threadNav.next && navigate(`/mail/${threadNav.next.id}`)}
                   className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-35"
                 >
-                  이후 <ChevronRight className="w-3.5 h-3.5" />
+                  이후 메일 <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
@@ -347,7 +348,7 @@ export function MailReviewView() {
                   const loading = attBusyId === a.id;
                   const missingId = !a.gmail_attachment_id;
                   return (
-                    <li key={a.id} className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-2.5 bg-white text-sm min-w-0">
+                    <li key={a.id} className="flex flex-col gap-2 px-3 py-2.5 bg-white text-sm min-w-0 sm:flex-row sm:items-center">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-slate-800">{a.filename}</div>
                         <div className="text-xs text-slate-400 break-all">
@@ -393,9 +394,9 @@ export function MailReviewView() {
       </div>
 
       {/* 하단: AI 추출 편집 (전체 폭) */}
-      <section className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 space-y-4 min-w-0 w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-          <h3 className="font-semibold text-slate-800 text-sm sm:text-base">AI 추출 결과 (편집)</h3>
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 min-w-0 w-full">
+        <div className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+          <h3 className="font-semibold text-slate-800">AI 추출 결과 (편집)</h3>
           {extraction && (
             <span className="text-xs text-slate-500">
               신뢰도 {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}

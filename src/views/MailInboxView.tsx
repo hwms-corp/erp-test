@@ -45,7 +45,7 @@ const PAGE_SIZE = 20;
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
-  online: 'Mail API 정상',
+  online: 'Mail API 정상 동작',
   offline: 'AI 연결 안 됨',
   unauthorized: 'API Key 오류',
   unconfigured: '미설정',
@@ -290,21 +290,22 @@ export function MailInboxView() {
         />
       )}
 
-      <div className="flex flex-col gap-3 min-w-0">
+      <div className="flex flex-col gap-3 min-w-0 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <h2 className="text-lg sm:text-2xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
-            <Inbox className="w-5 h-5 sm:w-7 sm:h-7 text-indigo-600 shrink-0" />
+          <h2 className="text-xl lg:text-2xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
+            <Inbox className="w-6 h-6 lg:w-7 lg:h-7 text-indigo-600 shrink-0" />
             <span className="truncate">AI 메일함</span>
           </h2>
-          <p className="text-[11px] sm:text-sm text-slate-500 mt-1 leading-snug">
-            Gmail 견적의뢰 · AI 분류/추출 · 견적 초안
+          <p className="text-xs lg:text-sm text-slate-500 mt-1">
+            <span className="lg:hidden">Gmail 견적의뢰 · AI 분류/추출 · 견적 초안</span>
+            <span className="hidden lg:inline">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</span>
           </p>
         </div>
-        <div className="flex flex-col gap-2 w-full min-w-0">
+        <div className="flex flex-col gap-2 w-full min-w-0 lg:w-auto lg:flex-row lg:flex-wrap lg:items-center lg:gap-3">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             <span
               title={aiDetail || undefined}
-              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] sm:text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
+              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${AI_STATUS_TONE[aiStatus]}`}
             >
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
@@ -318,23 +319,23 @@ export function MailInboxView() {
             <button
               type="button"
               onClick={() => setShowAiModal(true)}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
             >
               <Plug className="w-3.5 h-3.5" /> AI 연동
             </button>
             <button
               type="button"
               onClick={() => { void load(); void refreshAiHealth(); }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs border border-slate-200 bg-white hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+              <RefreshCw className="w-4 h-4" /> 새로고침
             </button>
           </div>
 
-          <div className="flex w-full items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 min-w-0">
+          <div className="flex w-full lg:w-[15.5rem] lg:shrink-0 items-center gap-2.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden">
               <p className="text-xs font-semibold text-slate-800">견적 자동등록</p>
-              <p className="text-[11px] text-slate-500 truncate">
+              <p className="text-[11px] text-slate-500 truncate lg:whitespace-nowrap">
                 {autoRegister ? '활성 · AI 검토대기로 저장' : '비활성 (기본)'}
               </p>
             </div>
@@ -360,8 +361,8 @@ export function MailInboxView() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 scrollbar-thin">
+      <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
+        <div className="flex gap-1.5 lg:gap-2 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
           {statuses.map(s => (
             <button
               key={s || 'all'}
@@ -372,7 +373,7 @@ export function MailInboxView() {
                 n.set('page', '1');
                 return n;
               })}
-              className={`shrink-0 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium border ${
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border ${
                 status === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
               }`}
             >
@@ -380,18 +381,18 @@ export function MailInboxView() {
             </button>
           ))}
         </div>
-        <div className="flex flex-col gap-2 w-full min-w-0">
+        <div className="flex flex-col gap-2 w-full min-w-0 lg:ml-auto lg:w-auto lg:flex-row lg:items-center">
           <button
             type="button"
             disabled={selectedIds.size === 0 || deleteBusy}
             onClick={() => void deleteSelected()}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed w-full sm:w-auto sm:self-end"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed w-full lg:w-auto"
           >
             <Trash2 className="w-4 h-4 shrink-0" />
-            <span className="truncate">선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
+            <span className="truncate">메일선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
           </button>
           <input
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 lg:w-56"
             placeholder="제목/발신자 검색"
             defaultValue={q}
             onKeyDown={e => {
@@ -409,8 +410,8 @@ export function MailInboxView() {
         </div>
       </div>
 
-      {/* 모바일: 카드 리스트 */}
-      <div className="md:hidden space-y-2">
+      {/* 모바일·태블릿: 카드 리스트 / 데스크톱(lg+): 테이블 */}
+      <div className="lg:hidden space-y-2">
         <div className="flex items-center gap-2 px-1">
           <input
             type="checkbox"
@@ -491,7 +492,7 @@ export function MailInboxView() {
       </div>
 
       {/* 데스크톱: 테이블 */}
-      <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+      <div className="hidden lg:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-sm min-w-[640px]">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
