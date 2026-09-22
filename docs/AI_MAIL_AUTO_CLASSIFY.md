@@ -156,4 +156,11 @@ ERP를 Vercel에 올리면 `localhost`/`loca.lt` 는 쓸 수 없습니다. 별�
 - `mail-ai-api`: 이미지는 Vision(`image_url`), PDF는 file modality (실패 시 본문만 폴백)
 - 한도: 파일 최대 5개, 개당 약 8MB
 
-배포 시 **Railway(`mail-ai-api`) + `gmail-watch` 둘 다** 갱신해야 OCR이 동작합니다.
+배포 시 **Railway(`mail-ai-api`) + `gmail-watch` 둘 다** 갱신해야 OCR이 동작합니다.## 첨부 미리보기 / 다운로드 (Storage 미사용)
+
+파일 바이너리는 Supabase Storage에 저장하지 않습니다. DB에는 메타(`filename`, `mime_type`, `size_bytes`, `gmail_attachment_id`)만 두고, 미리보기·다운로드는 Edge `gmail-attachment`가 Gmail API에서 on-demand로 가져옵니다.
+
+- 마이그레이션 `023_mail_attachment_gmail_id.sql`
+- Edge `gmail-attachment` (Gmail OAuth secrets 공유)
+- ERP `MailReviewView` → `fetchGmailAttachment`
+- 기존 메일(id 없음): 재수신/재동기화 후 가능
