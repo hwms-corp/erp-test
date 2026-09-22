@@ -271,10 +271,10 @@ export function MailReviewView() {
             disabled={busy}
             onClick={() => void rerunAi()}
             title="분류·추출을 다시 실행합니다. 자동등록은 하지 않습니다."
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 min-w-0"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 min-w-0"
           >
             <Sparkles className="w-4 h-4 shrink-0" />
-            <span className="truncate">{busy ? '재실행 중…' : '추출 재실행'}</span>
+            <span className="truncate">{busy ? '재실행 중…' : 'AI분류 재실행'}</span>
           </button>
           <button
             type="button"
@@ -282,7 +282,7 @@ export function MailReviewView() {
             onClick={saveEdits}
             className="px-3 py-2 rounded-xl text-sm bg-slate-800 text-white disabled:opacity-50 min-w-0"
           >
-            추출 저장
+            분류 저장
           </button>
           <button
             type="button"
@@ -406,7 +406,7 @@ export function MailReviewView() {
 
         {!extraction && (
           <p className="text-sm text-slate-400">
-            추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">추출 재실행</span>을 눌러 주세요.
+            추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">AI분류 재실행</span>을 눌러 주세요.
           </p>
         )}
 

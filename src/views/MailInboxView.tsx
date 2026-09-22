@@ -325,10 +325,19 @@ export function MailInboxView() {
             </button>
             <button
               type="button"
-              onClick={() => { void load(); void refreshAiHealth(); }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50"
+              disabled={selectedIds.size === 0 || deleteBusy}
+              onClick={() => void deleteSelected()}
+              className="inline-flex items-center justify-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-[clamp(0.65rem,2.4vw,0.875rem)] font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
             >
-              <RefreshCw className="w-4 h-4" /> 새로고침
+              <Trash2 className="w-[1em] h-[1em] shrink-0" />
+              <span>메일삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { void load(); void refreshAiHealth(); }}
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-[clamp(0.65rem,2.4vw,0.875rem)] border border-slate-200 bg-white hover:bg-slate-50 whitespace-nowrap"
+            >
+              <RefreshCw className="w-[1em] h-[1em] shrink-0" /> 새로고침
             </button>
           </div>
 
@@ -381,16 +390,7 @@ export function MailInboxView() {
             </button>
           ))}
         </div>
-        <div className="flex flex-col gap-2 w-full min-w-0 lg:ml-auto lg:w-auto lg:flex-row lg:items-center">
-          <button
-            type="button"
-            disabled={selectedIds.size === 0 || deleteBusy}
-            onClick={() => void deleteSelected()}
-            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed w-full lg:w-auto"
-          >
-            <Trash2 className="w-4 h-4 shrink-0" />
-            <span className="truncate">메일선택삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
-          </button>
+        <div className="w-full min-w-0 lg:ml-auto lg:w-auto">
           <input
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 lg:w-56"
             placeholder="제목/발신자 검색"
