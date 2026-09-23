@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
@@ -19,6 +19,27 @@ function formatReceivedAtKst(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return '—';
   const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
   return s.replace(/-/g, '/');
+}
+
+/** 전체메일함용 받은/보낸 표시 */
+function MailDirectionBadge({ sent }: { sent: boolean }) {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-tight leading-none ${
+        sent
+          ? 'bg-sky-50 text-sky-700 border border-sky-100'
+          : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+      }`}
+      title={sent ? '보낸메일' : '받은메일'}
+    >
+      {sent ? (
+        <ArrowUpRight className="w-3.5 h-3.5 shrink-0" strokeWidth={3} aria-hidden />
+      ) : (
+        <ArrowDownLeft className="w-3.5 h-3.5 shrink-0" strokeWidth={3} aria-hidden />
+      )}
+      {sent ? '보냄' : '받음'}
+    </span>
+  );
 }
 
 /** 납품관리 세금계산서 미발행과 동일한 커스텀 체크박스 */
@@ -237,6 +258,7 @@ export function MailInboxView() {
   const boxParam = searchParams.get('box') || searchParams.get('status') || 'latest';
   const box = boxParam as MailBoxId;
   const inTrash = box === 'trash';
+  const showDirection = box === 'all';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -905,6 +927,9 @@ export function MailInboxView() {
               }`}
             >
               <div className="flex items-start gap-2.5">
+                {showDirection && (
+                  <MailDirectionBadge sent={!!m.is_sent} />
+                )}
                 <MailSelectCheckbox
                   checked={checked}
                   onToggle={() => toggleSelectOne(m.id)}
@@ -959,6 +984,11 @@ export function MailInboxView() {
         <table className="w-full text-sm table-fixed">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
+              {showDirection && (
+                <th className="px-1.5 py-2 w-14 text-center text-[10px] font-semibold" title="받은/보낸">
+                  구분
+                </th>
+              )}
               <th className="px-2 py-2 w-11 text-center">
                 <div className="flex justify-center">
                   <MailSelectCheckbox
@@ -981,10 +1011,10 @@ export function MailInboxView() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
+              <tr><td colSpan={showDirection ? 8 : 7} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && mails.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
+              <tr><td colSpan={showDirection ? 8 : 7} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {!loading && mails.map(m => {
               const unread = m.is_read !== true;
@@ -998,6 +1028,11 @@ export function MailInboxView() {
                   }`}
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
+                  {showDirection && (
+                    <td className="px-1.5 py-1.5 text-center align-middle">
+                      <MailDirectionBadge sent={!!m.is_sent} />
+                    </td>
+                  )}
                   <td className="px-2 py-1.5 text-center align-middle">
                     <div className="flex justify-center">
                       <MailSelectCheckbox
