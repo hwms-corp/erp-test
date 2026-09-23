@@ -453,6 +453,7 @@ Deno.serve(async (req) => {
               gmail_label_ids: labels,
               is_sent: isSentOnly,
               is_starred: labels.includes('STARRED'),
+              is_read: !labels.includes('UNREAD'),
               updated_at: now,
             })
             .eq('id', row.id);

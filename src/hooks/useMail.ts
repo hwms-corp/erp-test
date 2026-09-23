@@ -72,11 +72,13 @@ export function useMail() {
     }
 
     const isMixedMailbox = box === 'all' || box === 'inbox' || box === 'sent';
+    const isAiStatusBox = PROCESS_STATUSES.has(box);
     if (box === 'latest' || box === 'unread' || box === 'read') {
       query = query
         .order('is_read', { ascending: true, nullsFirst: true })
         .order('received_at', { ascending: false });
-    } else if (isMixedMailbox && !starPriority) {
+    } else if (isAiStatusBox || (isMixedMailbox && !starPriority)) {
+      // AI 분류 상태함: 즐겨찾기 우선 미적용 / 전체·받은·보낸에서 별우선 OFF
       query = query.order('received_at', { ascending: false });
     } else {
       query = query
@@ -144,6 +146,35 @@ export function useMail() {
       .eq('id', mailId)
       .eq('is_read', false)
       .select()
+      .maybeSingle();
+    return { data: data as MailMessage | null, error };
+  }, []);
+
+  /** 읽음/안읽음 토글 — ERP + Gmail UNREAD 라벨 */
+  const setMailRead = useCallback(async (id: number, read: boolean) => {
+    const { error: upErr } = await supabase
+      .from('mail_messages')
+      .update({
+        is_read: read,
+        read_at: read ? new Date().toISOString() : null,
+      })
+      .eq('id', id);
+    if (upErr) {
+      return { data: null, error: upErr };
+    }
+    const { ok, error: mirrorErr } = await mirrorToGmail({
+      action: 'modify_labels',
+      mailIds: [id],
+      addLabelIds: read ? [] : ['UNREAD'],
+      removeLabelIds: read ? ['UNREAD'] : [],
+    });
+    if (!ok) {
+      return { data: null, error: { message: mirrorErr || '읽음 동기화 실패' } };
+    }
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .select('*')
+      .eq('id', id)
       .maybeSingle();
     return { data: data as MailMessage | null, error };
   }, []);
@@ -602,6 +633,7 @@ export function useMail() {
     fetchThreadMails,
     fetchAttachments,
     markMailRead,
+    setMailRead,
     softDeleteMails,
     restoreMails,
     hardDeleteMails,

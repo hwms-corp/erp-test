@@ -242,7 +242,7 @@ function MobileScrollChipRow({
 
 export function MailInboxView() {
   const { user } = useAuth();
-  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, restoreMails, hardDeleteMails, setMailStarred, fetchGmailLabels } = useMail();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, restoreMails, hardDeleteMails, setMailStarred, setMailRead, fetchGmailLabels } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [gmailLabels, setGmailLabels] = useState<GmailLabelRow[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -298,7 +298,8 @@ export function MailInboxView() {
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
-  const tableColSpan = (showDirection ? 1 : 0) + (showStarColumn ? 1 : 0) + 6;
+  // 구분? + 체크 + 별? + 읽음 + 제목 + 발신 + 시각 + 상태 + 신뢰도
+  const tableColSpan = (showDirection ? 1 : 0) + 1 + (showStarColumn ? 1 : 0) + 1 + 5;
 
   // 상세에서 발송 후 ?notice=sent 로 진입 시 완료 배너
   useEffect(() => {
@@ -536,6 +537,22 @@ export function MailInboxView() {
       ),
     );
     const { error } = await setMailStarred(id, next);
+    if (error) {
+      void load({ silent: true });
+    }
+  };
+
+  const toggleRead = async (id: number, currentlyUnread: boolean) => {
+    // currentlyUnread true → mark as read
+    const nextRead = currentlyUnread;
+    setMails(prev =>
+      prev.map(m =>
+        m.id === id
+          ? { ...m, is_read: nextRead, read_at: nextRead ? new Date().toISOString() : null }
+          : m,
+      ),
+    );
+    const { error } = await setMailRead(id, nextRead);
     if (error) {
       void load({ silent: true });
     }
@@ -1113,17 +1130,26 @@ export function MailInboxView() {
                 )}
                 <button
                   type="button"
+                  className={`mt-0.5 p-0.5 shrink-0 ${unread ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                  aria-label={unread ? '읽음으로 표시' : '안읽음으로 표시'}
+                  aria-pressed={!unread}
+                  title={unread ? '안읽음 → 클릭하여 읽음' : '읽음 → 클릭하여 안읽음'}
+                  onClick={e => {
+                    e.stopPropagation();
+                    void toggleRead(m.id, unread);
+                  }}
+                >
+                  {unread
+                    ? <Mail className="w-5 h-5" />
+                    : <MailOpen className="w-5 h-5" />}
+                </button>
+                <button
+                  type="button"
                   className="min-w-0 flex-1 text-left"
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className={`text-sm leading-snug line-clamp-2 ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
-                      <Mail className={`inline w-3.5 h-3.5 mr-1 align-text-top ${unread ? 'text-orange-500' : 'text-slate-400'}`} />
-                      {unread && (
-                        <span className="inline-block mr-1 text-[10px] font-bold uppercase tracking-wide text-orange-600 bg-orange-100 px-1 py-0.5 rounded align-middle">
-                          NEW
-                        </span>
-                      )}
                       {m.subject || '(제목 없음)'}
                     </div>
                     <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_TONE[m.process_status]}`}>
@@ -1167,6 +1193,9 @@ export function MailInboxView() {
                   <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
                 </th>
               )}
+              <th className="px-1 py-2 w-10 text-center" aria-label="읽음" title="읽음">
+                <Mail className="w-3.5 h-3.5 mx-auto text-orange-400" />
+              </th>
               <th className="px-3 py-2">제목</th>
               <th className="px-2 py-2 w-[16%]">발신자</th>
               <th className="px-2 py-2 w-[13.5rem] whitespace-nowrap">수신시각</th>
@@ -1231,16 +1260,25 @@ export function MailInboxView() {
                       </button>
                     </td>
                   )}
+                  <td className="px-1 py-1.5 text-center align-middle">
+                    <button
+                      type="button"
+                      className={`p-1 ${unread ? 'text-orange-500' : 'text-slate-400 hover:text-slate-600'}`}
+                      aria-label={unread ? '읽음으로 표시' : '안읽음으로 표시'}
+                      aria-pressed={!unread}
+                      title={unread ? '안읽음 → 클릭하여 읽음' : '읽음 → 클릭하여 안읽음'}
+                      onClick={e => {
+                        e.stopPropagation();
+                        void toggleRead(m.id, unread);
+                      }}
+                    >
+                      {unread
+                        ? <Mail className="w-4 h-4 mx-auto" />
+                        : <MailOpen className="w-4 h-4 mx-auto" />}
+                    </button>
+                  </td>
                   <td className={`px-3 py-1.5 align-middle ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
-                    <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
-                      <Mail className={`w-4 h-4 shrink-0 ${unread ? 'text-orange-500' : 'text-slate-400'}`} />
-                      {unread && (
-                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded">
-                          NEW
-                        </span>
-                      )}
-                      <span className="truncate">{m.subject || '(제목 없음)'}</span>
-                    </span>
+                    <span className="block truncate">{m.subject || '(제목 없음)'}</span>
                   </td>
                   <td className="px-2 py-1.5 text-slate-600 align-middle">
                     <span className="block truncate" title={m.from_addr || undefined}>
