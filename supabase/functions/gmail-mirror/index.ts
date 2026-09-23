@@ -223,6 +223,83 @@ async function gmailSend(
   return data as { id?: string; threadId?: string; labelIds?: string[] };
 }
 
+function headerValue(
+  headers: { name?: string; value?: string }[] | undefined,
+  name: string,
+): string | null {
+  const hit = (headers || []).find(h => (h.name || '').toLowerCase() === name.toLowerCase());
+  return hit?.value?.trim() || null;
+}
+
+/** 발송 직후 ERP mail_messages에 SENT 행 적재 */
+async function importSentToErp(
+  accessToken: string,
+  gmailMessageId: string,
+  fallback: { to: string; cc?: string; subject: string; body: string },
+): Promise<number | null> {
+  const supabaseUrl = requireEnv('SUPABASE_URL');
+  const service = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const sb = createClient(supabaseUrl, service, { auth: { persistSession: false } });
+
+  const { data: existing } = await sb
+    .from('mail_messages')
+    .select('id')
+    .eq('gmail_message_id', gmailMessageId)
+    .maybeSingle();
+  if (existing?.id) return existing.id as number;
+
+  const res = await fetch(
+    `${GMAIL_API}/users/${gmailUser()}/messages/${encodeURIComponent(gmailMessageId)}?format=full`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
+  );
+  const msg = await res.json().catch(() => ({})) as {
+    id?: string;
+    threadId?: string;
+    snippet?: string;
+    internalDate?: string;
+    labelIds?: string[];
+    payload?: { headers?: { name?: string; value?: string }[] };
+  };
+  if (!res.ok || !msg.id) {
+    console.error('importSentToErp fetch failed', res.status, msg);
+  }
+
+  const headers = msg.payload?.headers || [];
+  const labels = (msg.labelIds || ['SENT']) as string[];
+  const internalDate = msg.internalDate
+    ? new Date(Number(msg.internalDate)).toISOString()
+    : new Date().toISOString();
+
+  const { data: row, error } = await sb
+    .from('mail_messages')
+    .insert({
+      gmail_message_id: gmailMessageId,
+      gmail_thread_id: msg.threadId ?? null,
+      subject: headerValue(headers, 'Subject') || fallback.subject || '(제목 없음)',
+      from_addr: headerValue(headers, 'From'),
+      to_addr: headerValue(headers, 'To') || fallback.to,
+      received_at: internalDate,
+      snippet: msg.snippet ?? ((fallback.body || '').slice(0, 160) || null),
+      body_text: fallback.body || null,
+      body_html: null,
+      process_status: 'rejected',
+      is_rfq: false,
+      status_reason: 'ERP에서 발송 — AI 미실행',
+      gmail_label_ids: labels,
+      is_sent: true,
+      is_starred: labels.includes('STARRED'),
+      is_read: true,
+    })
+    .select('id')
+    .single();
+
+  if (error || !row) {
+    console.error('importSentToErp insert', error?.message);
+    return null;
+  }
+  return row.id as number;
+}
+
 type Action =
   | 'trash'
   | 'untrash'
@@ -274,25 +351,41 @@ Deno.serve(async (req) => {
 
     const accessToken = await getAccessToken();
 
-    // 메일 작성·발송
+    // 메일 작성·발송 → Gmail send 후 ERP 보낸메일함에 즉시 반영
     if (action === 'send') {
       const to = (body.to || '').trim();
       if (!to) return json({ error: 'to required' }, 400);
+      const subject = body.subject || '';
+      const mailBody = body.body || '';
       const sent = await gmailSend(accessToken, {
         to,
         cc: body.cc,
-        subject: body.subject || '',
-        body: body.body || '',
+        subject,
+        body: mailBody,
         threadId: body.threadId,
         inReplyTo: body.inReplyTo,
         references: body.references,
         attachments: body.attachments,
       });
+      let mailId: number | null = null;
+      if (sent.id) {
+        try {
+          mailId = await importSentToErp(accessToken, sent.id, {
+            to,
+            cc: body.cc,
+            subject,
+            body: mailBody,
+          });
+        } catch (e) {
+          console.error('importSentToErp', e);
+        }
+      }
       return json({
         ok: true,
         action: 'send',
         gmail_message_id: sent.id ?? null,
         thread_id: sent.threadId ?? null,
+        mail_id: mailId,
       });
     }
 

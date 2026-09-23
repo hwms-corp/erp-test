@@ -107,6 +107,7 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 };
 
 const PAGE_SIZE = 30;
+const STAR_PRIORITY_LS = 'erp_mail_star_priority';
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
@@ -258,6 +259,15 @@ export function MailInboxView() {
   const [showGuide, setShowGuide] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [sendNotice, setSendNotice] = useState<string | null>(null);
+  /** 전체/받은/보낸: 즐겨찾기 우선 정렬 (디폴트 ON) */
+  const [starPriority, setStarPriority] = useState(() => {
+    try {
+      return localStorage.getItem(STAR_PRIORITY_LS) !== '0';
+    } catch {
+      return true;
+    }
+  });
   /** left 중메뉴 접기/펼치기 — 기본 전부 열림 */
   const [navOpen, setNavOpen] = useState({ folders: true, status: true, labels: true });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -267,15 +277,43 @@ export function MailInboxView() {
     setNavOpen(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const toggleStarPriority = () => {
+    setStarPriority(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem(STAR_PRIORITY_LS, next ? '1' : '0');
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   const isAdmin = user?.role === 'admin';
   /** URL: box 우선, 구 status= 호환 — 기본은 최신메일함 */
   const boxParam = searchParams.get('box') || searchParams.get('status') || 'latest';
   const box = boxParam as MailBoxId;
   const inTrash = box === 'trash';
   const showDirection = box === 'all';
+  const showStarColumn = box !== 'latest';
+  const showStarPriorityToggle = box === 'all' || box === 'inbox' || box === 'sent';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const tableColSpan = (showDirection ? 1 : 0) + (showStarColumn ? 1 : 0) + 6;
+
+  // 상세에서 발송 후 ?notice=sent 로 진입 시 완료 배너
+  useEffect(() => {
+    if (searchParams.get('notice') !== 'sent') return;
+    const to = searchParams.get('to');
+    setSendNotice(to ? `메일 전송이 완료되었습니다 → ${to}` : '메일 전송이 완료되었습니다.');
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev);
+      n.delete('notice');
+      n.delete('to');
+      return n;
+    }, { replace: true });
+    const t = window.setTimeout(() => setSendNotice(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [searchParams, setSearchParams]);
 
   const setBox = useCallback((next: MailBoxId) => {
     setSearchParams(prev => {
@@ -334,6 +372,7 @@ export function MailInboxView() {
       q: q || undefined,
       page,
       pageSize: PAGE_SIZE,
+      starPriority: showStarPriorityToggle ? starPriority : undefined,
     });
     setMails(data ?? []);
     setTotalItems(count ?? 0);
@@ -344,7 +383,7 @@ export function MailInboxView() {
       return next;
     });
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, box, q, page]);
+  }, [fetchMails, box, q, page, showStarPriorityToggle, starPriority]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
@@ -633,8 +672,11 @@ export function MailInboxView() {
         <MailComposeModal
           open
           onClose={() => setShowCompose(false)}
-          onSent={() => {
+          onSent={(info) => {
+            const to = info?.to ? ` → ${info.to}` : '';
+            setSendNotice(`메일 전송이 완료되었습니다${to}`);
             setBox('sent');
+            window.setTimeout(() => setSendNotice(null), 5000);
           }}
         />
       )}
@@ -752,6 +794,23 @@ export function MailInboxView() {
           </div>
         </div>
       </div>
+
+      {sendNotice && (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-900 shadow-sm"
+        >
+          <Check className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" aria-hidden />
+          <p className="min-w-0 flex-1 font-medium break-words">{sendNotice}</p>
+          <button
+            type="button"
+            onClick={() => setSendNotice(null)}
+            className="shrink-0 text-emerald-700/70 hover:text-emerald-900 text-xs font-semibold"
+          >
+            닫기
+          </button>
+        </div>
+      )}
 
       {/* 모바일·태블릿: 가로 탭형 메일함 메뉴 */}
       <div className="lg:hidden space-y-2 min-w-0">
@@ -954,23 +1013,41 @@ export function MailInboxView() {
             <p className="text-sm font-semibold text-slate-800 truncate">{currentBoxLabel}
               <span className="ml-2 text-xs font-normal text-slate-400 tabular-nums">{totalItems}건</span>
             </p>
-            <input
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 sm:w-56"
-              placeholder="제목/발신자 검색"
-              defaultValue={q}
-              key={q}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  const v = (e.target as HTMLInputElement).value.trim();
-                  setSearchParams(prev => {
-                    const n = new URLSearchParams(prev);
-                    if (v) n.set('q', v); else n.delete('q');
-                    n.set('page', '1');
-                    return n;
-                  });
-                }
-              }}
-            />
+            <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+              {showStarPriorityToggle && (
+                <button
+                  type="button"
+                  onClick={toggleStarPriority}
+                  aria-pressed={starPriority}
+                  title={starPriority ? '즐겨찾기 우선 정렬 ON — 클릭하면 해제' : '즐겨찾기 우선 정렬 OFF — 클릭하면 켜기'}
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-semibold transition-colors ${
+                    starPriority
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  <Star className={`w-4 h-4 ${starPriority ? 'text-amber-400 fill-amber-400' : 'text-amber-300'}`} />
+                  <span className="hidden sm:inline">{starPriority ? '별 우선' : '별 우선 끔'}</span>
+                </button>
+              )}
+              <input
+                className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 sm:w-56"
+                placeholder="제목/발신자 검색"
+                defaultValue={q}
+                key={q}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const v = (e.target as HTMLInputElement).value.trim();
+                    setSearchParams(prev => {
+                      const n = new URLSearchParams(prev);
+                      if (v) n.set('q', v); else n.delete('q');
+                      n.set('page', '1');
+                      return n;
+                    });
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {/* 모바일·태블릿: 카드 리스트 */}
@@ -1020,18 +1097,20 @@ export function MailInboxView() {
                   ariaLabel={`${m.subject || '메일'} 선택`}
                   className="mt-0.5"
                 />
-                <button
-                  type="button"
-                  className={`mt-0.5 p-0.5 shrink-0 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
-                  aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
-                  aria-pressed={!!m.is_starred}
-                  onClick={e => {
-                    e.stopPropagation();
-                    void toggleStar(m.id, !!m.is_starred);
-                  }}
-                >
-                  <Star className={`w-5 h-5 ${m.is_starred ? 'fill-amber-400' : ''}`} />
-                </button>
+                {showStarColumn && (
+                  <button
+                    type="button"
+                    className={`mt-0.5 p-0.5 shrink-0 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
+                    aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
+                    aria-pressed={!!m.is_starred}
+                    onClick={e => {
+                      e.stopPropagation();
+                      void toggleStar(m.id, !!m.is_starred);
+                    }}
+                  >
+                    <Star className={`w-5 h-5 ${m.is_starred ? 'fill-amber-400' : ''}`} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="min-w-0 flex-1 text-left"
@@ -1083,9 +1162,11 @@ export function MailInboxView() {
                   />
                 </div>
               </th>
-              <th className="px-1 py-2 w-10 text-center" aria-label="즐겨찾기">
-                <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
-              </th>
+              {showStarColumn && (
+                <th className="px-1 py-2 w-10 text-center" aria-label="즐겨찾기">
+                  <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
+                </th>
+              )}
               <th className="px-3 py-2">제목</th>
               <th className="px-2 py-2 w-[16%]">발신자</th>
               <th className="px-2 py-2 w-[13.5rem] whitespace-nowrap">수신시각</th>
@@ -1095,10 +1176,10 @@ export function MailInboxView() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={showDirection ? 8 : 7} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
+              <tr><td colSpan={tableColSpan} className="px-4 py-8 text-center text-slate-400">로딩 중…</td></tr>
             )}
             {!loading && mails.length === 0 && (
-              <tr><td colSpan={showDirection ? 8 : 7} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
+              <tr><td colSpan={tableColSpan} className="px-4 py-8 text-center text-slate-400">메일이 없습니다.</td></tr>
             )}
             {!loading && mails.map(m => {
               const unread = m.is_read !== true;
@@ -1134,20 +1215,22 @@ export function MailInboxView() {
                       />
                     </div>
                   </td>
-                  <td className="px-1 py-1.5 text-center align-middle">
-                    <button
-                      type="button"
-                      className={`p-1 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
-                      aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
-                      aria-pressed={!!m.is_starred}
-                      onClick={e => {
-                        e.stopPropagation();
-                        void toggleStar(m.id, !!m.is_starred);
-                      }}
-                    >
-                      <Star className={`w-4 h-4 mx-auto ${m.is_starred ? 'fill-amber-400' : ''}`} />
-                    </button>
-                  </td>
+                  {showStarColumn && (
+                    <td className="px-1 py-1.5 text-center align-middle">
+                      <button
+                        type="button"
+                        className={`p-1 ${m.is_starred ? 'text-amber-400' : 'text-slate-300 hover:text-amber-400'}`}
+                        aria-label={m.is_starred ? '즐겨찾기 해제' : '즐겨찾기'}
+                        aria-pressed={!!m.is_starred}
+                        onClick={e => {
+                          e.stopPropagation();
+                          void toggleStar(m.id, !!m.is_starred);
+                        }}
+                      >
+                        <Star className={`w-4 h-4 mx-auto ${m.is_starred ? 'fill-amber-400' : ''}`} />
+                      </button>
+                    </td>
+                  )}
                   <td className={`px-3 py-1.5 align-middle ${unread ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                     <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
                       <Mail className={`w-4 h-4 shrink-0 ${unread ? 'text-orange-500' : 'text-slate-400'}`} />

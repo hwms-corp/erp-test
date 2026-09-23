@@ -28,6 +28,8 @@ export function useMail() {
     q?: string;
     page?: number;
     pageSize?: number;
+    /** 전체/받은/보낸: 즐겨찾기 우선 정렬 (기본 true) */
+    starPriority?: boolean;
   }) => {
     const page = Math.max(1, filters?.page ?? 1);
     const pageSize = Math.max(1, filters?.pageSize ?? 30);
@@ -36,6 +38,7 @@ export function useMail() {
 
     const box = (filters?.box || filters?.status || 'all') as string;
     const inTrash = box === 'trash';
+    const starPriority = filters?.starPriority !== false;
 
     let query = supabase
       .from('mail_messages')
@@ -68,10 +71,13 @@ export function useMail() {
       query = query.eq('process_status', box);
     }
 
+    const isMixedMailbox = box === 'all' || box === 'inbox' || box === 'sent';
     if (box === 'latest' || box === 'unread' || box === 'read') {
       query = query
         .order('is_read', { ascending: true, nullsFirst: true })
         .order('received_at', { ascending: false });
+    } else if (isMixedMailbox && !starPriority) {
+      query = query.order('received_at', { ascending: false });
     } else {
       query = query
         // 즐겨찾기 최상단, 최근 별표가 더 위, 그다음 수신시각

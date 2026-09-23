@@ -76,7 +76,7 @@ export async function sendGmailMessage(opts: {
   inReplyTo?: string;
   references?: string;
   attachments?: SendAttachment[];
-}): Promise<{ ok: boolean; gmailMessageId?: string | null; error?: string }> {
+}): Promise<{ ok: boolean; gmailMessageId?: string | null; mailId?: number | null; error?: string }> {
   if (!supabaseUrl) throw new Error('Supabase URL 없음');
   const headers = await authHeader();
   const res = await fetch(`${supabaseUrl}/functions/v1/gmail-mirror`, {
@@ -104,5 +104,6 @@ export async function sendGmailMessage(opts: {
   return {
     ok: true,
     gmailMessageId: (json as { gmail_message_id?: string | null }).gmail_message_id ?? null,
+    mailId: (json as { mail_id?: number | null }).mail_id ?? null,
   };
 }

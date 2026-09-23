@@ -470,7 +470,14 @@ export function MailReviewView() {
             setComposeOpen(false);
             setComposeDraft(null);
           }}
-          onSent={() => navigate('/mail?box=sent')}
+          onSent={(info) => {
+            const q = new URLSearchParams({
+              box: 'sent',
+              notice: 'sent',
+            });
+            if (info?.to) q.set('to', info.to);
+            navigate(`/mail?${q.toString()}`);
+          }}
         />
       )}
       {/* 모바일·태블릿: 세로 / 데스크톱(lg+): 기존 가로 헤더 */}

@@ -18,7 +18,7 @@ export type ComposeDraft = {
 type Props = {
   open: boolean;
   onClose: () => void;
-  onSent?: () => void;
+  onSent?: (info?: { subject: string; to: string }) => void;
   draft?: ComposeDraft | null;
 };
 
@@ -131,7 +131,7 @@ export function MailComposeModal({ open, onClose, onSent, draft }: Props) {
       }
       reset();
       onClose();
-      onSent?.();
+      onSent?.({ subject: subject.trim() || '(제목 없음)', to: toTrim });
     } catch (e) {
       setError((e as Error).message || '발송 실패');
     } finally {
