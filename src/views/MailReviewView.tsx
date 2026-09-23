@@ -6,9 +6,13 @@ import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
 import { useAuth } from '@/hooks/useAuth';
 import { PartnerSearchModal } from '@/components/PartnerSearchModal';
+import { MaterialEditor } from '@/components/MaterialEditor';
 import { ExtractionKvTable } from '@/components/ExtractionKvTable';
 import { MailHtmlBody } from '@/components/MailHtmlBody';
-import { extractionToMaterialLines } from '@/lib/mailMatching';
+import {
+  applyOrderFormToExtraction,
+  extractionToMaterialLines,
+} from '@/lib/mailMatching';
 import {
   collectOcrFilesFromAttachments,
   fetchGmailAttachment,
@@ -16,8 +20,8 @@ import {
   isPreviewableMime,
 } from '@/lib/gmailAttachment';
 import type { CanonicalExtraction, MailAttachment, MailMessage, MailProcessStatus, PartnerMatchCandidate } from '@/types/aiMail';
-import type { Partner } from '@/types';
-import { today } from '@/types';
+import type { MaterialLine, Partner } from '@/types';
+import { emptyMaterialLine, fmtW, today } from '@/types';
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
@@ -38,6 +42,34 @@ type PreviewState = {
   url: string;
 } | null;
 
+function hydrateFormFromExtraction(ext: CanonicalExtraction | null | undefined) {
+  if (!ext) {
+    return {
+      docNo: '',
+      orderDate: today(),
+      contactPerson: '',
+      vessel: '',
+      deliveryDate: '',
+      customerName: '',
+      lines: [emptyMaterialLine()] as MaterialLine[],
+    };
+  }
+  const mapped = extractionToMaterialLines(ext);
+  return {
+    docNo: String(ext.request.document_no?.value || ''),
+    orderDate: String(ext.request.request_date?.value || today()),
+    contactPerson: String(
+      ext.request.contact_person?.value
+      || ext.customer.contact_name?.value
+      || '',
+    ),
+    vessel: String(ext.request.vessel?.value || ''),
+    deliveryDate: String(ext.request.delivery_date?.value || ''),
+    customerName: String(ext.customer.name?.value || ''),
+    lines: mapped.length ? mapped : [emptyMaterialLine()],
+  };
+}
+
 export function MailReviewView() {
   const { id } = useParams();
   const mailId = Number(id);
@@ -52,6 +84,13 @@ export function MailReviewView() {
     Pick<MailMessage, 'id' | 'subject' | 'from_addr' | 'received_at' | 'process_status'>[]
   >([]);
   const [extraction, setExtraction] = useState<CanonicalExtraction | null>(null);
+  const [docNo, setDocNo] = useState('');
+  const [orderDate, setOrderDate] = useState(today);
+  const [contactPerson, setContactPerson] = useState('');
+  const [vessel, setVessel] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [lines, setLines] = useState<MaterialLine[]>([emptyMaterialLine()]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [candidates, setCandidates] = useState<PartnerMatchCandidate[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
@@ -65,6 +104,32 @@ export function MailReviewView() {
     () => partners.filter(p => p.type === 'sales' || p.type === 'both'),
     [partners],
   );
+
+  const supplyAmount = lines.reduce((s, l) => s + l.qty * l.price, 0);
+  const taxAmount = Math.floor(supplyAmount * 0.1);
+  const totalAmount = supplyAmount + taxAmount;
+
+  const applyExtractionToForm = (ext: CanonicalExtraction | null | undefined) => {
+    const h = hydrateFormFromExtraction(ext);
+    setDocNo(h.docNo);
+    setOrderDate(h.orderDate);
+    setContactPerson(h.contactPerson);
+    setVessel(h.vessel);
+    setDeliveryDate(h.deliveryDate);
+    setCustomerName(h.customerName);
+    setLines(h.lines);
+  };
+
+  const buildExtractionFromForm = (base: CanonicalExtraction): CanonicalExtraction =>
+    applyOrderFormToExtraction(base, {
+      docNo,
+      orderDate,
+      contactPerson,
+      vessel,
+      customerName,
+      deliveryDate,
+      lines,
+    });
 
   const applyPartnerSuggestions = (ext: CanonicalExtraction, list: Partner[]) => {
     const c = suggestPartners(ext, list);
@@ -80,6 +145,7 @@ export function MailReviewView() {
       const { data } = await fetchMail(mailId);
       setMail(data);
       setExtraction(data?.extraction ?? null);
+      applyExtractionToForm(data?.extraction);
       if (data && data.is_read === false) {
         const { data: updated } = await markMailRead(mailId);
         if (updated) setMail(updated);
@@ -103,11 +169,6 @@ export function MailReviewView() {
       }
     })();
   }, [mailId, fetchMail, fetchAttachments, fetchThreadMails, fetchPartners, markMailRead, suggestPartners]);
-
-  const lines = useMemo(
-    () => (extraction ? extractionToMaterialLines(extraction) : []),
-    [extraction],
-  );
 
   const threadNav = useMemo(() => {
     if (!mail || threadMails.length < 2) return { prev: null as typeof threadMails[0] | null, next: null as typeof threadMails[0] | null, index: 0, total: threadMails.length };
@@ -194,12 +255,14 @@ export function MailReviewView() {
       if (rejected) {
         if (data) setMail(data);
         setExtraction(null);
+        applyExtractionToForm(null);
         setMsg('견적의뢰가 아닌 문서로 분류되었습니다. 상태를 확인해 주세요.');
         return;
       }
       if (data) {
         setMail(data);
         setExtraction(data.extraction);
+        applyExtractionToForm(data.extraction);
         const { data: partnerList } = await fetchPartners();
         const list = partnerList ?? [];
         setPartners(list);
@@ -213,13 +276,23 @@ export function MailReviewView() {
 
   const saveEdits = async () => {
     if (!extraction) return;
+    if (!docNo.trim()) {
+      setMsg('견적번호를 입력해주세요.');
+      return;
+    }
+    if (!lines.some(l => l.name.trim())) {
+      setMsg('최소 1개 이상의 품목을 입력해주세요.');
+      return;
+    }
     setBusy(true);
-    const { data, error } = await saveExtraction(mailId, extraction);
+    const next = buildExtractionFromForm(extraction);
+    const { data, error } = await saveExtraction(mailId, next);
     setBusy(false);
     if (error) setMsg(error.message || '저장 실패');
     else {
       setMail(data);
-      setMsg('추출 결과 저장됨');
+      setExtraction(next);
+      setMsg('추출 결과 저장됨 (견적서 작성 양식 기준)');
     }
   };
 
@@ -228,14 +301,33 @@ export function MailReviewView() {
       setMsg('거래처를 선택하세요');
       return;
     }
+    if (!docNo.trim()) {
+      setMsg('견적번호를 입력해주세요.');
+      return;
+    }
+    const validLines = lines.filter(l => l.name.trim());
+    if (validLines.length === 0) {
+      setMsg('최소 1개 이상의 품목을 입력해주세요.');
+      return;
+    }
     if (!confirm('검토 내용으로 견적(draft)을 등록할까요?')) return;
     setBusy(true);
-    const { data, error } = await registerAsDraft(mail, selectedPartner.id, user.id, {
-      order_date: extraction.request.request_date.value || today(),
-      contact_person: extraction.request.contact_person.value || extraction.customer.contact_name.value,
-      vessel: extraction.request.vessel.value,
-      items: lines,
-    });
+    const next = buildExtractionFromForm(extraction);
+    // 최신 폼 값을 extraction에도 반영 후 등록
+    await saveExtraction(mailId, next);
+    setExtraction(next);
+    const { data, error } = await registerAsDraft(
+      { ...mail, extraction: next },
+      selectedPartner.id,
+      user.id,
+      {
+        doc_no: docNo.trim(),
+        order_date: orderDate || today(),
+        contact_person: contactPerson.trim() || null,
+        vessel: vessel.trim() || null,
+        items: validLines,
+      },
+    );
     setBusy(false);
     if (error) setMsg((error as { message?: string }).message || '등록 실패');
     else if (data) {
@@ -408,10 +500,10 @@ export function MailReviewView() {
         )}
       </div>
 
-      {/* 하단: AI 추출 편집 (전체 폭) */}
-      <section className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4 min-w-0 w-full">
+      {/* 하단: 견적서 작성과 동일한 입력 양식 */}
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 space-y-6 min-w-0 w-full">
         <div className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
-          <h3 className="font-semibold text-slate-800">AI 추출 결과 (편집)</h3>
+          <h3 className="font-semibold text-slate-800">AI 추출 결과 (편집) · 견적서 작성 양식</h3>
           {extraction && (
             <span className="text-xs text-slate-500">
               신뢰도 {Math.round(extraction.overall_confidence * 100)}% · {extraction.language}
@@ -422,119 +514,100 @@ export function MailReviewView() {
         {!extraction && (
           <p className="text-sm text-slate-400">
             추출 결과가 없습니다. 상단의 <span className="font-medium text-slate-600">AI분류 재실행</span>을 눌러 주세요.
+            재실행 후 아래에 견적서 작성과 같은 입력란이 채워집니다.
           </p>
         )}
 
         {extraction && (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-              <label className="space-y-1 sm:col-span-2 lg:col-span-3">
-                <span className="text-slate-500">문서번호 (견적의뢰서)</span>
-                <input
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  value={extraction.request.document_no?.value || ''}
-                  onChange={e => setExtraction({
-                    ...extraction,
-                    request: {
-                      ...extraction.request,
-                      document_no: {
-                        ...(extraction.request.document_no || {
-                          value: null, original_key: null, original_value: null, confidence: 0,
-                          source_file: null, source_page: null, evidence_text: null, language: null,
-                        }),
-                        value: e.target.value,
-                        confidence: 1,
-                      },
-                    },
-                  })}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-500">거래처명</span>
-                <input
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  value={extraction.customer.name.value || ''}
-                  onChange={e => setExtraction({
-                    ...extraction,
-                    customer: {
-                      ...extraction.customer,
-                      name: { ...extraction.customer.name, value: e.target.value, confidence: 1 },
-                    },
-                  })}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-500">담당</span>
-                <input
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  value={extraction.request.contact_person.value || ''}
-                  onChange={e => setExtraction({
-                    ...extraction,
-                    request: {
-                      ...extraction.request,
-                      contact_person: { ...extraction.request.contact_person, value: e.target.value, confidence: 1 },
-                    },
-                  })}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-500">선명</span>
-                <input
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  value={extraction.request.vessel.value || ''}
-                  onChange={e => setExtraction({
-                    ...extraction,
-                    request: {
-                      ...extraction.request,
-                      vessel: { ...extraction.request.vessel, value: e.target.value, confidence: 1 },
-                    },
-                  })}
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="text-slate-500">납기</span>
-                <input
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                  value={extraction.request.delivery_date.value || ''}
-                  onChange={e => setExtraction({
-                    ...extraction,
-                    request: {
-                      ...extraction.request,
-                      delivery_date: { ...extraction.request.delivery_date, value: e.target.value, confidence: 1 },
-                    },
-                  })}
-                />
-              </label>
-            </div>
-
-            <div>
-              <div className="text-sm font-medium text-slate-700 mb-2">품목</div>
-              <div className="overflow-x-auto border border-slate-100 rounded-xl">
-                <table className="w-full text-sm min-w-[420px]">
-                  <thead className="bg-slate-50 text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2 text-left">품명</th>
-                      <th className="px-3 py-2 text-left">사양</th>
-                      <th className="px-3 py-2 text-right">수량</th>
-                      <th className="px-3 py-2 text-left">단위</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {lines.map((l, i) => (
-                      <tr key={i}>
-                        <td className="px-3 py-2">{l.name}</td>
-                        <td className="px-3 py-2 text-slate-600">{l.spec}</td>
-                        <td className="px-3 py-2 text-right">{l.qty}</td>
-                        <td className="px-3 py-2">{l.unit}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* 기본 정보 — OrderFormView 와 동일 */}
+            <div className="space-y-4">
+              <h4 className="font-semibold text-slate-900">기본 정보</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">견적번호 *</label>
+                  <input
+                    type="text"
+                    className={inp}
+                    value={docNo}
+                    onChange={e => setDocNo(e.target.value)}
+                    placeholder="견적번호 입력"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">견적일자 *</label>
+                  <input
+                    type="date"
+                    className={inp}
+                    value={orderDate}
+                    onChange={e => setOrderDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">거래처 *</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPartnerModal(true)}
+                    className={`${inp} text-left flex items-center justify-between`}
+                  >
+                    <span className={selectedPartner ? 'text-slate-900 font-medium' : 'text-slate-400'}>
+                      {selectedPartner ? selectedPartner.name : '거래처 검색...'}
+                    </span>
+                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                  </button>
+                </div>
               </div>
-            </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">담당자</label>
+                  <input
+                    type="text"
+                    className={inp}
+                    value={contactPerson}
+                    onChange={e => setContactPerson(e.target.value)}
+                    placeholder="거래처 담당자명"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Vessel</label>
+                  <input
+                    type="text"
+                    className={inp}
+                    value={vessel}
+                    onChange={e => setVessel(e.target.value)}
+                    placeholder="선명 (Vessel)"
+                  />
+                </div>
+              </div>
 
-            <div className="space-y-2 max-w-xl">
-              <div className="text-sm font-medium text-slate-700">거래처 *</div>
+              {/* 메일 전용 참고 필드 (견적 DB 컬럼 없음) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    AI 거래처명 <span className="text-slate-400 font-normal">(매칭 참고)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={inp}
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="메일에서 추출된 거래처명"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    납기 <span className="text-slate-400 font-normal">(참고)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={inp}
+                    value={deliveryDate}
+                    onChange={e => setDeliveryDate(e.target.value)}
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+              </div>
+
               {candidates.length > 0 ? (
                 <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 break-words">
                   AI 추천: {candidates.slice(0, 3).map(c =>
@@ -546,16 +619,7 @@ export function MailReviewView() {
                   자동 매칭 후보 없음 — 거래처 검색으로 직접 선택하세요.
                 </p>
               )}
-              <button
-                type="button"
-                onClick={() => setShowPartnerModal(true)}
-                className={`${inp} text-left flex items-center justify-between`}
-              >
-                <span className={selectedPartner ? 'text-slate-900 font-medium' : 'text-slate-400'}>
-                  {selectedPartner ? selectedPartner.name : '거래처 검색...'}
-                </span>
-                <Search className="w-4 h-4 text-slate-400 shrink-0" />
-              </button>
+
               {selectedPartner && (
                 <div className="bg-slate-50 rounded-xl p-3 text-sm text-slate-600 space-y-1">
                   <p><span className="text-slate-400">사업자번호:</span> {selectedPartner.biz_no}</p>
@@ -565,6 +629,31 @@ export function MailReviewView() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* 품목 정보 — MaterialEditor (견적서 작성과 동일) */}
+            <div className="space-y-4 border-t border-slate-100 pt-6">
+              <h4 className="font-semibold text-slate-900">품목 정보</h4>
+              <p className="text-xs text-slate-500">
+                AI가 분류한 품목이 아래에 채워집니다. 견적서 작성과 같이 행을 추가·수정·삭제할 수 있습니다.
+              </p>
+              <MaterialEditor lines={lines} onChange={setLines} />
+              <div className="flex justify-end">
+                <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-sm min-w-[240px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">공급가액</span>
+                    <span className="text-slate-900">{fmtW(supplyAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">세액 (10%)</span>
+                    <span className="text-slate-900">{fmtW(taxAmount)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-200 pt-2 font-semibold">
+                    <span className="text-slate-700">합계</span>
+                    <span className="text-indigo-600">{fmtW(totalAmount)}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </>
         )}

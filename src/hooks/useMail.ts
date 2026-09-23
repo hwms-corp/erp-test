@@ -341,17 +341,24 @@ export function useMail() {
     mail: MailMessage,
     partnerId: number,
     createdBy: number,
-    overrides?: { order_date?: string; contact_person?: string | null; vessel?: string | null; items?: MaterialLine[] },
+    overrides?: {
+      doc_no?: string;
+      order_date?: string;
+      contact_person?: string | null;
+      vessel?: string | null;
+      items?: MaterialLine[];
+    },
   ) => {
     const extraction = mail.extraction;
     if (!extraction) return { data: null, error: { message: 'extraction missing' } };
 
-    const items = overrides?.items ?? extractionToMaterialLines(extraction);
+    const items = (overrides?.items ?? extractionToMaterialLines(extraction)).filter(l => l.name.trim());
     if (!items.length) return { data: null, error: { message: 'no line items' } };
 
-    // 견적의뢰서 문서번호가 있으면 그대로 사용. 없으면 임시번호로라도 draft 등록 (검토대기에서 수정)
+    // 견적서 작성 폼의 견적번호 우선. 없으면 AI 문서번호 → 임시번호
+    const formDocNo = (overrides?.doc_no || '').toString().trim();
     const extractedDocNo = (extraction.request.document_no?.value || '').toString().trim();
-    const docNo = extractedDocNo || `미확인-${mail.id}`;
+    const docNo = formDocNo || extractedDocNo || `미확인-${mail.id}`;
 
     const orderDate = overrides?.order_date
       || extraction.request.request_date.value
