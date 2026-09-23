@@ -14,6 +14,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
@@ -108,10 +109,11 @@ export function MailReviewView() {
   const mailId = Number(id);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchMail, fetchAttachments, fetchThreadMails, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners, softDeleteMails } = useMail();
+  const { fetchMail, fetchAttachments, fetchThreadMails, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners, softDeleteMails, restoreMails } = useMail();
   const { fetchPartners } = usePartners();
 
   const [mail, setMail] = useState<MailMessage | null>(null);
+  const [mailLoadDone, setMailLoadDone] = useState(false);
   const [attachments, setAttachments] = useState<MailAttachment[]>([]);
   const [threadMails, setThreadMails] = useState<
     Pick<MailMessage, 'id' | 'subject' | 'from_addr' | 'received_at' | 'process_status'>[]
@@ -176,6 +178,8 @@ export function MailReviewView() {
   };
 
   useEffect(() => {
+    setMailLoadDone(false);
+    setMail(null);
     (async () => {
       const { data } = await fetchMail(mailId);
       setMail(data);
@@ -202,6 +206,7 @@ export function MailReviewView() {
       } else if (data?.extraction && list.length) {
         applyPartnerSuggestions(data.extraction, list);
       }
+      setMailLoadDone(true);
     })();
   }, [mailId, fetchMail, fetchAttachments, fetchThreadMails, fetchPartners, markMailRead, suggestPartners]);
 
@@ -376,9 +381,26 @@ export function MailReviewView() {
     }
   };
 
-  if (!mail) {
+  if (!mailLoadDone) {
     return <div className="p-8 text-slate-400">메일 로딩 중…</div>;
   }
+
+  if (!mail) {
+    return (
+      <div className="p-8 space-y-3">
+        <p className="text-slate-600">메일을 찾을 수 없습니다.</p>
+        <button
+          type="button"
+          onClick={() => navigate('/mail')}
+          className="text-sm text-indigo-600 hover:underline"
+        >
+          메일함으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
+  const inTrash = !!mail.deleted_at;
 
   const openReply = () => {
     const quoted = displayMailBody(mail);
@@ -422,6 +444,18 @@ export function MailReviewView() {
       return;
     }
     navigate('/mail?box=trash');
+  };
+
+  const restoreMail = async () => {
+    if (!confirm('이 메일을 휴지통에서 복원할까요?\nGmail에서도 함께 복원됩니다.')) return;
+    setBusy(true);
+    const { error } = await restoreMails([mail.id]);
+    setBusy(false);
+    if (error) {
+      setMsg(`복원 실패: ${error.message}`);
+      return;
+    }
+    navigate('/mail?box=latest');
   };
 
   return (
@@ -471,15 +505,27 @@ export function MailReviewView() {
             <Forward className="w-4 h-4 shrink-0" />
             전달
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void deleteMail()}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4 shrink-0" />
-            삭제
-          </button>
+          {inTrash ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void restoreMail()}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4 shrink-0" />
+              복원
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void deleteMail()}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4 shrink-0" />
+              삭제
+            </button>
+          )}
           <button
             type="button"
             disabled={busy}

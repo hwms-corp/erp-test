@@ -99,7 +99,7 @@ export function MailGuideModal({ open, onClose }: Props) {
         </div>
         <div className="overflow-y-auto px-5 py-4 space-y-4">
           <p className="text-sm text-slate-600 leading-relaxed">
-            왼쪽 메일함·상태 이름과 목록에 보이는 배지가 무엇을 뜻하는지 쉽게 정리했습니다.
+            왼쪽 메일함·AI 분류 상태 이름과 목록에 보이는 배지가 무엇을 뜻하는지 쉽게 정리했습니다.
           </p>
           {GUIDE_ITEMS.map(item => (
             <div key={item.title}>

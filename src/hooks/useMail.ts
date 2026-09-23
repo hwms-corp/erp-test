@@ -96,12 +96,12 @@ export function useMail() {
   }, []);
 
   const fetchMail = useCallback(async (id: number) => {
+    // 휴지통 메일도 상세 열람 가능 (deleted_at 필터 없음)
     const { data, error } = await supabase
       .from('mail_messages')
       .select('*')
       .eq('id', id)
-      .is('deleted_at', null)
-      .single();
+      .maybeSingle();
     return { data: data as MailMessage | null, error };
   }, []);
 

@@ -32,7 +32,7 @@ function MailDirectionBadge({ sent, fill = false }: { sent: boolean; fill?: bool
   );
   const tone = sent
     ? 'bg-sky-50 text-sky-700 border-sky-200'
-    : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    : 'bg-emerald-200 text-emerald-900 border-emerald-400';
 
   if (fill) {
     return (
@@ -381,7 +381,24 @@ export function MailInboxView() {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'mail_messages' },
-        () => { void load({ silent: true }); },
+        payload => {
+          const row = payload.new as MailMessage;
+          if (row?.id == null) return;
+          const id = Number(row.id);
+          // 자리 유지: 전체 재조회(재정렬) 하지 않고 현재 페이지 행만 패치
+          setMails(prev => {
+            const idx = prev.findIndex(m => m.id === id);
+            if (idx < 0) return prev;
+            // 휴지통 이동/복원 시 현재 함에서 빼기
+            const nowTrash = row.deleted_at != null;
+            if (box === 'trash' ? !nowTrash : nowTrash) {
+              return prev.filter(m => m.id !== id);
+            }
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...row };
+            return next;
+          });
+        },
       )
       .on(
         'postgres_changes',
@@ -418,7 +435,7 @@ export function MailInboxView() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load, refreshAiHealth]);
+  }, [load, refreshAiHealth, box]);
 
   const toggleAutoRegister = async () => {
     if (!isAdmin || !user || settingsBusy) return;
@@ -472,38 +489,16 @@ export function MailInboxView() {
   const toggleStar = async (id: number, currentlyStarred: boolean) => {
     if (inTrash) return;
     const next = !currentlyStarred;
-    // 낙관적 UI
-    setMails(prev => {
-      // 최신메일함: 별표 시 목록에서 제외 / 즐겨찾기: 별표 해제 시 제외
-      if (box === 'latest' && next) return prev.filter(m => m.id !== id);
-      if (box === 'starred' && !next) return prev.filter(m => m.id !== id);
-
-      const updated = prev.map(m =>
+    // 별표만 갱신 — 목록 순서/필터는 유지 (새로고침·페이지 이동 시에만 서버 order 반영)
+    setMails(prev =>
+      prev.map(m =>
         m.id === id
           ? { ...m, is_starred: next, starred_at: next ? new Date().toISOString() : null }
           : m,
-      );
-      if (box === 'latest' || box === 'read' || box === 'unread') {
-        return [...updated].sort((a, b) => {
-          const ar = a.is_read === true ? 1 : 0;
-          const br = b.is_read === true ? 1 : 0;
-          if (ar !== br) return ar - br;
-          return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
-        });
-      }
-      return [...updated].sort((a, b) => {
-        const as = a.is_starred ? 1 : 0;
-        const bs = b.is_starred ? 1 : 0;
-        if (as !== bs) return bs - as;
-        const at = a.starred_at ? new Date(a.starred_at).getTime() : 0;
-        const bt = b.starred_at ? new Date(b.starred_at).getTime() : 0;
-        if (at !== bt) return bt - at;
-        return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
-      });
-    });
+      ),
+    );
     const { error } = await setMailStarred(id, next);
     if (error) {
-      // 롤백: 서버 기준으로 다시 로드
       void load({ silent: true });
     }
   };
@@ -797,8 +792,8 @@ export function MailInboxView() {
         )}
 
         <div className="space-y-1 min-w-0">
-          <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</p>
-          <MobileScrollChipRow ariaLabel="상태">
+          <p className="px-1 text-[10px] font-bold tracking-wide text-slate-400">AI 분류 상태</p>
+          <MobileScrollChipRow ariaLabel="AI 분류 상태">
             {BOX_STATUS.map(b => {
               const active = box === b.id;
               return (
@@ -849,7 +844,7 @@ export function MailInboxView() {
               </div>
             </div>
             <div>
-              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</p>
+              <p className="px-2.5 pb-1 text-[10px] font-bold tracking-wide text-slate-400">AI 분류 상태</p>
               <div className="space-y-0.5">
                 {BOX_STATUS.map(b => (
                   <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
