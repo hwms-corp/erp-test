@@ -491,16 +491,23 @@ function isOcrCandidate(filename: string, mime: string | null): boolean {
   );
 }
 
-/** 높을수록 우선. CID 인라인 이미지는 -1(제외). PDF/xlsx > 일반 이미지 */
+/** 높을수록 우선. CID 작은 로고만 제외, 큰 CID(견적표)는 포함 */
+const MIN_CID_IMAGE_OCR_BYTES = 20 * 1024;
+
 function ocrCandidatePriority(
   filename: string,
   mime: string | null,
   contentId: string | null,
+  sizeBytes: number | null,
 ): number {
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();
   const isImage = m.startsWith('image/') || /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f);
-  if (contentId && isImage) return -1;
+  if (contentId && isImage) {
+    if (sizeBytes != null && sizeBytes < MIN_CID_IMAGE_OCR_BYTES) return -1;
+    if (sizeBytes == null) return 35;
+    return 40;
+  }
   if (m.includes('pdf') || f.endsWith('.pdf')) return 100;
   if (/\.(xlsx|xlsm|xls)$/i.test(f) || m.includes('spreadsheet')) return 90;
   if (/\.(docx|doc)$/i.test(f) || m.includes('wordprocessing') || m.includes('msword')) return 80;
@@ -543,7 +550,7 @@ async function collectOcrFiles(
   const ranked = [...attachments]
     .map(att => ({
       att,
-      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id),
+      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id, att.size_bytes),
     }))
     .filter(x => x.priority >= 0 && isOcrCandidate(x.att.filename, x.att.mime_type))
     .sort((a, b) => b.priority - a.priority || a.att.filename.localeCompare(b.att.filename));
@@ -661,7 +668,7 @@ async function aiDocRequest<T>(path: string, body: unknown): Promise<T> {
   return jsonBody as T;
 }
 
-/** Classify + extract; updates mail_messages. Skips if AI secrets missing. */
+/** Classify + extract (ERP 수동 재분류와 동일 API); updates mail_messages. Skips if AI secrets missing. */
 async function runAiForMail(
   sb: ReturnType<typeof adminClient>,
   mailId: number,
@@ -681,10 +688,32 @@ async function runAiForMail(
     return { status: 'failed', error: 'empty body' };
   }
 
-  await sb.from('mail_messages').update({ process_status: 'classifying' }).eq('id', mailId);
+  const syncJobId = `sync_${crypto.randomUUID()}`;
+  await sb.from('mail_messages').update({
+    process_status: 'classifying',
+    error_message: null,
+    status_reason: null,
+    ai_job_id: syncJobId,
+  }).eq('id', mailId);
+
+  await sb.from('mail_ai_jobs').upsert(
+    {
+      mail_message_id: mailId,
+      external_job_id: syncJobId,
+      status: 'processing',
+      request_payload: {
+        source: 'gmail_watch',
+        text_len: text.length,
+        file_count: files?.length ?? 0,
+        files: (files ?? []).map(f => f.filename),
+      },
+    },
+    { onConflict: 'external_job_id' },
+  );
 
   try {
     const payload = { text, files: files?.length ? files : undefined };
+    // ERP useMail.runAiPipeline 과 동일: /v1/documents/classify → /v1/documents/extract
     const cls = await aiDocRequest<{
       data: { document_type: string; confidence: number; language: string };
     }>('/v1/documents/classify', payload);
@@ -699,7 +728,13 @@ async function runAiForMail(
       })
       .eq('id', mailId);
 
-    if (!isRfq) return { status: 'rejected' };
+    if (!isRfq) {
+      await sb.from('mail_ai_jobs').update({
+        status: 'completed',
+        result_payload: { classify: cls.data, rejected: true },
+      }).eq('external_job_id', syncJobId);
+      return { status: 'rejected' };
+    }
 
     const extracted = await aiDocRequest<{ data: CanonicalExtraction }>(
       '/v1/documents/extract',
@@ -728,6 +763,11 @@ async function runAiForMail(
       }
     }
 
+    await sb.from('mail_ai_jobs').update({
+      status: 'completed',
+      result_payload: { classify: cls.data, extraction: extracted.data },
+    }).eq('external_job_id', syncJobId);
+
     console.log(
       `AI mail ${mailId} → ${finalStatus} (files=${files?.length ?? 0} items=${itemCount} names=[${(files ?? []).map(f => f.filename).join(', ')}])`,
     );
@@ -739,6 +779,10 @@ async function runAiForMail(
       .from('mail_messages')
       .update({ process_status: 'failed', error_message: msg.slice(0, 500) })
       .eq('id', mailId);
+    await sb.from('mail_ai_jobs').update({
+      status: 'failed',
+      error_message: msg.slice(0, 500),
+    }).eq('external_job_id', syncJobId);
     return { status: 'failed', error: msg };
   }
 }

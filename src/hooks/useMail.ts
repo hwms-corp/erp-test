@@ -182,16 +182,19 @@ export function useMail() {
     onProgress?.('분류 준비 중…');
     await supabase
       .from('mail_messages')
-      .update({ process_status: 'classifying', error_message: null })
+      .update({ process_status: 'classifying', error_message: null, status_reason: null })
       .eq('id', mail.id);
 
+    // gmail-watch 자동 분류와 동일한 본문 포맷
+    const bodyPart = displayMailBody(mail);
     const text = [
-      mail.subject ? `[제목] ${mail.subject}` : '',
-      displayMailBody(mail),
+      mail.subject ? `[제목]\n${mail.subject}` : '',
+      bodyPart && bodyPart !== '(본문 없음)' ? `[본문]\n${bodyPart}` : '',
+      !mail.body_text && mail.snippet ? `[스니펫]\n${mail.snippet}` : '',
       ...(attachmentTexts?.map(a => a.text) || []),
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).join('\n\n');
 
-    // 분류·추출 모두 동일 첨부 사용 (본문만으로 비견적 오판 방지)
+    // 분류·추출 모두 동일 첨부 (자동 수신 collectOcrFiles 와 같은 후보)
     const jobFiles = [
       ...(opts?.files || []),
       ...(attachmentTexts?.map(a => ({
@@ -200,6 +203,8 @@ export function useMail() {
         mime_type: 'text/plain',
       })) || []),
     ];
+    const payloadFiles = jobFiles.length ? jobFiles : undefined;
+    const syncJobId = `sync_${crypto.randomUUID()}`;
 
     try {
       onProgress?.(
@@ -207,7 +212,25 @@ export function useMail() {
           ? `문서 분류 중… (첨부 ${jobFiles.length}개)`
           : '문서 분류 중…',
       );
-      const cls = await aiDocClient.classify(text, jobFiles.length ? jobFiles : undefined);
+
+      await supabase.from('mail_ai_jobs').upsert(
+        {
+          mail_message_id: mail.id,
+          external_job_id: syncJobId,
+          status: 'processing',
+          request_payload: {
+            source: forceReview ? 'manual_rerun' : 'client',
+            text_len: text.length,
+            file_count: jobFiles.length,
+            files: jobFiles.map(f => f.filename),
+            force_review: forceReview,
+          },
+        },
+        { onConflict: 'external_job_id' },
+      );
+
+      // 자동(gmail-watch)과 동일: classify → extract (sync). /v1/jobs 는 쓰지 않음.
+      const cls = await aiDocClient.classify(text, payloadFiles);
       const isRfq = cls.data.document_type === 'quotation_request';
 
       await supabase
@@ -216,51 +239,48 @@ export function useMail() {
           is_rfq: isRfq,
           classify_confidence: cls.data.confidence,
           process_status: isRfq ? 'extracting' : 'rejected',
+          ai_job_id: syncJobId,
         })
         .eq('id', mail.id);
 
       if (!isRfq) {
         onProgress?.('견적의뢰가 아닌 문서로 분류됨');
+        await supabase
+          .from('mail_ai_jobs')
+          .update({
+            status: 'completed',
+            result_payload: { classify: cls.data, rejected: true },
+          })
+          .eq('external_job_id', syncJobId);
         const { data } = await supabase.from('mail_messages').select('*').eq('id', mail.id).single();
         return { data: data as MailMessage | null, error: null, rejected: true as const };
       }
 
       onProgress?.('정보 추출 중…');
-      const job = await aiDocClient.createJob({
-        text,
-        files: jobFiles.length ? jobFiles : undefined,
-      });
-
-      await supabase.from('mail_ai_jobs').upsert(
-        {
-          mail_message_id: mail.id,
-          external_job_id: job.job_id,
-          status: job.status,
-          request_payload: { text_len: text.length, file_count: jobFiles.length, force_review: forceReview },
-        },
-        { onConflict: 'external_job_id' },
-      );
-
-      onProgress?.('추출 결과 확인 중…');
-      const done = await aiDocClient.pollJob(job.job_id, { timeoutMs: 90000 });
-      if (done.status === 'failed' || !done.result) {
-        await supabase
-          .from('mail_messages')
-          .update({ process_status: 'failed', error_message: done.error || 'extract failed', ai_job_id: job.job_id })
-          .eq('id', mail.id);
-        return { data: null, error: { message: done.error || '추출 실패' }, rejected: false as const };
-      }
+      const extracted = await aiDocClient.extract(text, payloadFiles);
+      const result = extracted.data;
+      const itemCount = (result.items || []).filter(
+        i => i.product_name?.value && String(i.product_name.value).trim(),
+      ).length;
 
       // 수동 재실행은 항상 검토필요 — 자동등록(ready_auto) 경로 차단
-      const status = forceReview ? 'review_required' : decideProcessStatus(done.result);
+      const status = forceReview ? 'review_required' : decideProcessStatus(result);
+      const statusReason =
+        jobFiles.length > 0 && itemCount === 0 && status === 'review_required'
+          ? `첨부 ${jobFiles.length}개 전달됐으나 의뢰 품목을 추출하지 못함 — 검토 필요`
+          : forceReview
+            ? '수동 재실행 — 검토 필요 (자동등록 미실행)'
+            : null;
+
       onProgress?.('결과 저장 중…');
       const { data, error } = await supabase
         .from('mail_messages')
         .update({
-          extraction: done.result,
+          extraction: result,
           process_status: status,
-          ai_job_id: job.job_id,
+          ai_job_id: syncJobId,
           error_message: null,
+          status_reason: statusReason,
         })
         .eq('id', mail.id)
         .select()
@@ -268,8 +288,11 @@ export function useMail() {
 
       await supabase
         .from('mail_ai_jobs')
-        .update({ status: 'completed', result_payload: done.result })
-        .eq('external_job_id', job.job_id);
+        .update({
+          status: 'completed',
+          result_payload: { classify: cls.data, extraction: result },
+        })
+        .eq('external_job_id', syncJobId);
 
       return { data: data as MailMessage | null, error, rejected: false as const };
     } catch (e) {
@@ -278,6 +301,10 @@ export function useMail() {
         .from('mail_messages')
         .update({ process_status: 'failed', error_message: msg })
         .eq('id', mail.id);
+      await supabase
+        .from('mail_ai_jobs')
+        .update({ status: 'failed', error_message: msg.slice(0, 500) })
+        .eq('external_job_id', syncJobId);
       return { data: null, error: { message: msg }, rejected: false as const };
     }
   }, []);

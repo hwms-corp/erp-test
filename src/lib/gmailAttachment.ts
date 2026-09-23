@@ -87,20 +87,28 @@ export function isOcrCandidate(filename: string, mime: string | null | undefined
 
 /**
  * OCR/추출 우선순위 (높을수록 먼저).
- * CID 인라인 이미지(서명·로고)는 -1 → 제외.
- * PDF/xlsx 가 인라인 이미지보다 앞선다.
+ * - PDF/xlsx 최우선
+ * - CID 인라인: 작은 로고/서명만 제외, 일정 크기 이상(견적 표 이미지)은 포함
  */
+const MIN_CID_IMAGE_OCR_BYTES = 20 * 1024;
+
 export function ocrCandidatePriority(
   filename: string,
   mime: string | null | undefined,
   contentId?: string | null,
+  sizeBytes?: number | null,
 ): number {
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();
   const isImage =
     m.startsWith('image/') || /\.(png|jpe?g|webp|gif|tiff?)$/i.test(f);
-  // 본문 삽입 이미지(서명/로고)는 견적 품목 소스가 아님
-  if (contentId && isImage) return -1;
+
+  if (contentId && isImage) {
+    // 그린펄 등: 품목표가 CID PNG로 옴. 작은 로고(~9KB)만 스킵
+    if (sizeBytes != null && sizeBytes < MIN_CID_IMAGE_OCR_BYTES) return -1;
+    if (sizeBytes == null) return 35; // 크기 모르면 포함(수동 재실행 안전)
+    return 40;
+  }
 
   if (m.includes('pdf') || f.endsWith('.pdf')) return 100;
   if (/\.(xlsx|xlsm|xls)$/i.test(f) || m.includes('spreadsheet')) return 90;
@@ -138,7 +146,7 @@ export async function collectOcrFilesFromAttachments(
   const ranked = [...attachments]
     .map(att => ({
       att,
-      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id),
+      priority: ocrCandidatePriority(att.filename, att.mime_type, att.content_id, att.size_bytes),
     }))
     .filter(x => x.priority >= 0 && !!x.att.gmail_attachment_id && isOcrCandidate(x.att.filename, x.att.mime_type))
     .sort((a, b) => b.priority - a.priority || a.att.filename.localeCompare(b.att.filename));
