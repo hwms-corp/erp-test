@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
@@ -127,6 +127,87 @@ function boxIcon(kind: (typeof BOX_MAIN)[number]['icon'], className = 'w-4 h-4')
   if (kind === 'trash') return <Trash2 className={className} />;
   if (kind === 'all') return <FolderOpen className={className} />;
   return <Inbox className={className} />;
+}
+
+/** 모바일 가로 칩 메뉴 — 넘치면 좌우 화살표로 스크롤 */
+function MobileScrollChipRow({
+  ariaLabel,
+  children,
+  className = '',
+}: {
+  ariaLabel: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const update = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanLeft(scrollLeft > 2);
+    setCanRight(scrollLeft + clientWidth < scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => update()) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', update);
+    // 칩 개수 변경 후 레이아웃 반영
+    const t = window.setTimeout(update, 0);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro?.disconnect();
+      window.removeEventListener('resize', update);
+      window.clearTimeout(t);
+    };
+  }, [update, children]);
+
+  const scrollByDir = (dir: -1 | 1) => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * Math.max(140, el.clientWidth * 0.55), behavior: 'smooth' });
+  };
+
+  const arrowCls =
+    'shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 disabled:opacity-25 disabled:pointer-events-none hover:bg-slate-50 active:bg-slate-100';
+
+  return (
+    <div className={`flex items-center gap-0.5 min-w-0 ${className}`}>
+      <button
+        type="button"
+        aria-label="왼쪽으로"
+        disabled={!canLeft}
+        onClick={() => scrollByDir(-1)}
+        className={arrowCls}
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      <div
+        ref={ref}
+        className="flex-1 min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label={ariaLabel}
+      >
+        <div className="flex w-max items-center gap-1.5 px-0.5">{children}</div>
+      </div>
+      <button
+        type="button"
+        aria-label="오른쪽으로"
+        disabled={!canRight}
+        onClick={() => scrollByDir(1)}
+        className={arrowCls}
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
 }
 
 export function MailInboxView() {
@@ -616,7 +697,7 @@ export function MailInboxView() {
 
       {/* 모바일·태블릿: 가로 탭형 메일함 메뉴 */}
       <div className="lg:hidden space-y-2 min-w-0">
-        <div className="flex items-stretch gap-2 min-w-0">
+        <div className="flex items-stretch gap-1.5 min-w-0">
           <button
             type="button"
             onClick={() => setShowCompose(true)}
@@ -626,43 +707,61 @@ export function MailInboxView() {
           >
             <MailPlus className="w-5 h-5" />
           </button>
-          <div
-            className="flex-1 min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            role="tablist"
-            aria-label="메일함"
-          >
-            <div className="flex w-max items-center gap-1.5 pr-1">
-              {BOX_MAIN.map(b => {
-                const active = box === b.id;
+          <MobileScrollChipRow ariaLabel="메일함" className="flex-1">
+            {BOX_MAIN.map(b => {
+              const active = box === b.id;
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setBox(b.id)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className={active ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
+                  {b.label}
+                </button>
+              );
+            })}
+          </MobileScrollChipRow>
+        </div>
+
+        {gmailLabels.length > 0 && (
+          <div className="space-y-1 min-w-0">
+            <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Label</p>
+            <MobileScrollChipRow ariaLabel="라벨">
+              {gmailLabels.map(l => {
+                const id = `label:${l.id}` as MailBoxId;
+                const active = box === id;
                 return (
                   <button
-                    key={b.id}
+                    key={l.id}
                     type="button"
                     role="tab"
                     aria-selected={active}
-                    onClick={() => setBox(b.id)}
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                    onClick={() => setBox(id)}
+                    className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                       active
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100'
                     }`}
                   >
-                    <span className={active ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
-                    {b.label}
+                    {l.name}
                   </button>
                 );
               })}
-            </div>
+            </MobileScrollChipRow>
           </div>
-        </div>
+        )}
 
-        <div
-          className="overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
-          aria-label="상태 · 라벨"
-        >
-          <div className="flex w-max items-center gap-1.5 pb-0.5">
-            <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</span>
+        <div className="space-y-1 min-w-0">
+          <p className="px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</p>
+          <MobileScrollChipRow ariaLabel="상태">
             {BOX_STATUS.map(b => {
               const active = box === b.id;
               return (
@@ -682,33 +781,7 @@ export function MailInboxView() {
                 </button>
               );
             })}
-            {gmailLabels.length > 0 && (
-              <>
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
-                <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Label</span>
-                {gmailLabels.map(l => {
-                  const id = `label:${l.id}` as MailBoxId;
-                  const active = box === id;
-                  return (
-                    <button
-                      key={l.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setBox(id)}
-                      className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                        active
-                          ? 'bg-violet-600 text-white'
-                          : 'bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100'
-                      }`}
-                    >
-                      {l.name}
-                    </button>
-                  );
-                })}
-              </>
-            )}
-          </div>
+          </MobileScrollChipRow>
         </div>
       </div>
 
