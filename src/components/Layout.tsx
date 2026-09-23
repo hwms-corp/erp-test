@@ -83,7 +83,7 @@ export function Layout() {
         <div className={`flex-1 overflow-y-auto ${isDashboard ? 'p-2 sm:p-3' : 'p-3 sm:p-6'}`}>
           <div className={`mx-auto w-full ${
             isDashboard ? 'max-w-none'
-              : isMail ? 'max-w-none lg:max-w-[90%]'
+              : isMail ? 'max-w-none lg:max-w-[95%]'
                 : 'max-w-7xl'
           }`}>
             <Outlet />

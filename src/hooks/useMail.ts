@@ -627,59 +627,74 @@ export function useMail() {
     return { data: (data ?? []) as import('@/types/aiMail').GmailLabelRow[], error };
   }, []);
 
-  /** 좌측 메일함·AI상태·라벨별 건수 (검색어 무관, 휴지통 분리) */
+  /** 좌측 메일함·AI상태·라벨별 건수 (검색어 무관, head count로 정확 집계) */
   const fetchMailboxCounts = useCallback(async () => {
-    const [{ data: rows, error }, { count: trash, error: trashErr }] = await Promise.all([
-      supabase
-        .from('mail_messages')
-        .select('is_sent, is_starred, is_read, process_status, gmail_label_ids')
-        .is('deleted_at', null),
-      supabase
-        .from('mail_messages')
-        .select('id', { count: 'exact', head: true })
-        .not('deleted_at', 'is', null),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const countExact = async (apply: (q: any) => any) => {
+      const { count, error } = await apply(
+        supabase.from('mail_messages').select('id', { count: 'exact', head: true }),
+      );
+      return { count: (count as number | null) ?? 0, error };
+    };
+
+    const statusList = [...PROCESS_STATUSES];
+    const [
+      allR, latestR, inboxR, sentR, readR, unreadR, starredR, trashR,
+      ...statusRs
+    ] = await Promise.all([
+      countExact(q => q.is('deleted_at', null)),
+      countExact(q => q.is('deleted_at', null).eq('is_sent', false).eq('is_starred', false)),
+      countExact(q => q.is('deleted_at', null).eq('is_sent', false)),
+      countExact(q => q.is('deleted_at', null).eq('is_sent', true)),
+      countExact(q => q.is('deleted_at', null).eq('is_sent', false).eq('is_read', true)),
+      countExact(q => q.is('deleted_at', null).eq('is_sent', false).eq('is_read', false)),
+      countExact(q => q.is('deleted_at', null).eq('is_starred', true)),
+      countExact(q => q.not('deleted_at', 'is', null)),
+      ...statusList.map(st =>
+        countExact(q => q.is('deleted_at', null).eq('process_status', st)),
+      ),
     ]);
-    if (error || trashErr) {
-      return { data: null as Record<string, number> | null, error: error || trashErr };
+
+    const firstErr =
+      allR.error || latestR.error || inboxR.error || sentR.error ||
+      readR.error || unreadR.error || starredR.error || trashR.error ||
+      statusRs.find(r => r.error)?.error;
+    if (firstErr) {
+      return { data: null as Record<string, number> | null, error: firstErr };
     }
 
     const counts: Record<string, number> = {
-      all: 0,
-      latest: 0,
-      inbox: 0,
-      sent: 0,
-      read: 0,
-      unread: 0,
-      starred: 0,
-      trash: trash ?? 0,
+      all: allR.count,
+      latest: latestR.count,
+      inbox: inboxR.count,
+      sent: sentR.count,
+      read: readR.count,
+      unread: unreadR.count,
+      starred: starredR.count,
+      trash: trashR.count,
     };
-    for (const s of PROCESS_STATUSES) counts[s] = 0;
+    statusList.forEach((st, i) => {
+      counts[st] = statusRs[i]?.count ?? 0;
+    });
 
-    for (const r of rows ?? []) {
-      counts.all += 1;
-      const sent = !!r.is_sent;
-      const starred = !!r.is_starred;
-      const read = r.is_read === true;
-      if (starred) counts.starred += 1;
-      if (sent) {
-        counts.sent += 1;
-      } else {
-        counts.inbox += 1;
-        if (!starred) counts.latest += 1;
-        if (read) counts.read += 1;
-        else counts.unread += 1;
-      }
-      const ps = String(r.process_status || '');
-      if (ps && Object.prototype.hasOwnProperty.call(counts, ps)) {
-        counts[ps] += 1;
-      }
-      const labels = (r.gmail_label_ids || []) as string[];
-      for (const lid of labels) {
-        if (!lid) continue;
-        const key = `label:${lid}`;
-        counts[key] = (counts[key] || 0) + 1;
-      }
+    const { data: labelRows } = await supabase
+      .from('gmail_labels')
+      .select('id')
+      .eq('label_type', 'user');
+    if (labelRows?.length) {
+      const labelResults = await Promise.all(
+        labelRows.map(async (l) => {
+          const { count } = await supabase
+            .from('mail_messages')
+            .select('id', { count: 'exact', head: true })
+            .is('deleted_at', null)
+            .contains('gmail_label_ids', [l.id]);
+          return [`label:${l.id}`, count ?? 0] as const;
+        }),
+      );
+      for (const [key, n] of labelResults) counts[key] = n;
     }
+
     return { data: counts, error: null };
   }, []);
 

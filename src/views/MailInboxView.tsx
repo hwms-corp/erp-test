@@ -85,7 +85,7 @@ function MailSelectCheckbox({
 }
 
 const STATUS_LABEL: Record<MailProcessStatus, string> = {
-  received: '수신(미분류)',
+  received: '수신',
   classifying: '분류중',
   extracting: '추출중',
   review_required: '검토필요',
@@ -107,7 +107,7 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 };
 
 const PAGE_SIZE = 30;
-const STAR_PRIORITY_LS = 'erp_mail_star_priority';
+const STAR_PRIORITY_LS = 'erp_mail_star_priority_v2';
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
@@ -320,7 +320,10 @@ export function MailInboxView() {
   /** 전체/받은/보낸: 즐겨찾기 우선 정렬 (디폴트 ON) */
   const [starPriority, setStarPriority] = useState(() => {
     try {
-      return localStorage.getItem(STAR_PRIORITY_LS) !== '0';
+      const v = localStorage.getItem(STAR_PRIORITY_LS);
+      // 저장된 값이 없을 때·이상값 → ON / 명시적 '0'만 OFF
+      if (v == null) return true;
+      return v !== '0';
     } catch {
       return true;
     }
@@ -1299,7 +1302,7 @@ export function MailInboxView() {
                 </th>
               )}
               <th className="px-1 py-2 w-10 text-center" aria-label="읽음" title="읽음">
-                <Mail className="w-3.5 h-3.5 mx-auto text-orange-400" />
+                <Mail className="w-3.5 h-3.5 mx-auto text-slate-300" />
               </th>
               <th className="px-3 py-2">제목</th>
               <th className="px-2 py-2 w-[16%]">발신자</th>
