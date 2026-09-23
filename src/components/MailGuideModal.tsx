@@ -3,7 +3,7 @@ import { HelpCircle } from 'lucide-react';
 const GUIDE_ITEMS: { title: string; body: string }[] = [
   {
     title: '최신메일함',
-    body: '받은 메일 중 즐겨찾기가 아닌 메일만 모읍니다. 안 읽은 메일이 위에, 그다음 최신 시간 순입니다. AI 메일함 기본 화면이며 한 페이지에 30건씩 보입니다.',
+    body: '받은 메일 중 즐겨찾기가 아닌 메일만 모읍니다. 안 읽은 메일이 위에, 그다음 최신 시간 순입니다. AI 메일함 기본 화면입니다.',
   },
   {
     title: '전체메일함',

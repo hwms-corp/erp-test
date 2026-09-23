@@ -78,8 +78,7 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
   failed: 'bg-red-50 text-red-700',
 };
 
-const PAGE_SIZE = 20;
-const LATEST_PAGE_SIZE = 30;
+const PAGE_SIZE = 30;
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
@@ -159,8 +158,7 @@ export function MailInboxView() {
   const inTrash = box === 'trash';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
-  const pageSize = box === 'latest' ? LATEST_PAGE_SIZE : PAGE_SIZE;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
 
   const setBox = useCallback((next: MailBoxId) => {
     setSearchParams(prev => {
@@ -218,7 +216,7 @@ export function MailInboxView() {
       box,
       q: q || undefined,
       page,
-      pageSize,
+      pageSize: PAGE_SIZE,
     });
     setMails(data ?? []);
     setTotalItems(count ?? 0);
@@ -229,7 +227,7 @@ export function MailInboxView() {
       return next;
     });
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, box, q, page, pageSize]);
+  }, [fetchMails, box, q, page]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
@@ -697,7 +695,7 @@ export function MailInboxView() {
                   Gmail 사용자 라벨 없음 (동기화 후 표시)
                 </p>
               ) : (
-                <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                <div className="space-y-0.5">
                   {gmailLabels.map(l => {
                     const id = `label:${l.id}` as MailBoxId;
                     return (
@@ -937,7 +935,7 @@ export function MailInboxView() {
           return n;
         })}
         totalItems={totalItems}
-        pageSize={pageSize}
+        pageSize={PAGE_SIZE}
       />
         </div>
       </div>

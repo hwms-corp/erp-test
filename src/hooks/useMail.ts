@@ -30,7 +30,7 @@ export function useMail() {
     pageSize?: number;
   }) => {
     const page = Math.max(1, filters?.page ?? 1);
-    const pageSize = Math.max(1, filters?.pageSize ?? 20);
+    const pageSize = Math.max(1, filters?.pageSize ?? 30);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
