@@ -15,6 +15,7 @@ import {
   Sparkles,
   Trash2,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
@@ -36,6 +37,7 @@ import {
   isPreviewableMime,
 } from '@/lib/gmailAttachment';
 import { displayMailBody } from '@/lib/mailBody';
+import { formatReceivedAtKst } from '@/lib/mailTime';
 import type { CanonicalExtraction, MailAttachment, MailMessage, MailProcessStatus, PartnerMatchCandidate } from '@/types/aiMail';
 import type { MaterialLine, Partner } from '@/types';
 import { emptyMaterialLine, fmtW, today } from '@/types';
@@ -483,6 +485,14 @@ export function MailReviewView() {
             </h2>
             <p className="text-xs lg:text-sm text-slate-500 break-all lg:truncate mt-0.5">
               {mail.from_addr} · {STATUS_LABEL[mail.process_status] || mail.process_status}
+            </p>
+            <p
+              className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[12px] sm:text-sm font-semibold text-indigo-800 tabular-nums"
+              title="수신시각 (한국시간)"
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0 text-indigo-500" aria-hidden />
+              <span className="whitespace-nowrap">{formatReceivedAtKst(mail.received_at)}</span>
+              <span className="text-[10px] font-medium text-indigo-500">KST</span>
             </p>
           </div>
         </div>

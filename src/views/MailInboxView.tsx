@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ChevronDown, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
@@ -11,15 +11,7 @@ import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
 import { supabase } from '@/lib/supabase';
 import type { GmailLabelRow, MailBoxId, MailMessage, MailProcessStatus } from '@/types/aiMail';
-
-/** 한국시간 YYYY/MM/DD HH:mm:ss (개행 없음) */
-function formatReceivedAtKst(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const s = d.toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' });
-  return s.replace(/-/g, '/');
-}
+import { formatReceivedAtKst } from '@/lib/mailTime';
 
 /** 전체메일함용 받은/보낸 표시 (fill=PC 테이블 세로 풀높이 + 색/테두리) */
 function MailDirectionBadge({ sent, fill = false }: { sent: boolean; fill?: boolean }) {
@@ -265,8 +257,14 @@ export function MailInboxView() {
   const [showGuide, setShowGuide] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  /** left 중메뉴 접기/펼치기 — 기본 전부 열림 */
+  const [navOpen, setNavOpen] = useState({ folders: true, status: true, labels: true });
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  const toggleNav = (key: keyof typeof navOpen) => {
+    setNavOpen(prev => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const isAdmin = user?.role === 'admin';
   /** URL: box 우선, 구 status= 호환 — 기본은 최신메일함 */
@@ -819,9 +817,9 @@ export function MailInboxView() {
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 min-w-0 items-start">
         {/* 데스크톱 left 메뉴 */}
-        <aside className="hidden lg:block w-52 shrink-0 sticky top-4 self-start">
-          <nav className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm space-y-3">
-            <div className="px-1 pt-0.5">
+        <aside className="hidden lg:block w-56 shrink-0 sticky top-4 self-start">
+          <nav className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm space-y-2">
+            <div className="px-1 pt-0.5 pb-1">
               <button
                 type="button"
                 onClick={() => setShowCompose(true)}
@@ -832,43 +830,89 @@ export function MailInboxView() {
                 <MailPlus className="w-5 h-5" />
               </button>
             </div>
-            <div>
-              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">메일함</p>
-              <div className="space-y-0.5">
-                {BOX_MAIN.map(b => (
-                  <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)}>
-                    <span className={box === b.id ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon)}</span>
-                    <span className="truncate">{b.label}</span>
-                  </NavBtn>
-                ))}
-              </div>
+
+            {/* 중메뉴: 메일함 */}
+            <div className="rounded-xl border border-slate-100 bg-slate-50/80 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleNav('folders')}
+                aria-expanded={navOpen.folders}
+                className="w-full flex items-center gap-1.5 px-2.5 py-2 text-left hover:bg-slate-100/80 transition-colors"
+              >
+                {navOpen.folders
+                  ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                  : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />}
+                <span className="text-[12px] font-bold text-slate-800 tracking-tight">메일함</span>
+              </button>
+              {navOpen.folders && (
+                <div className="px-1.5 pb-1.5 space-y-0.5 border-t border-slate-100 bg-white">
+                  {BOX_MAIN.map(b => (
+                    <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)}>
+                      <span className={box === b.id ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon)}</span>
+                      <span className="truncate">{b.label}</span>
+                    </NavBtn>
+                  ))}
+                </div>
+              )}
             </div>
-            <div>
-              <p className="px-2.5 pb-1 text-[10px] font-bold tracking-wide text-slate-400">AI 분류 상태</p>
-              <div className="space-y-0.5">
-                {BOX_STATUS.map(b => (
-                  <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
-                    <span className="truncate">{b.label}</span>
-                  </NavBtn>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Label</p>
-              {gmailLabels.length === 0 ? (
-                <p className="px-2.5 py-1.5 text-[11px] text-slate-400 leading-snug">
-                  Gmail 사용자 라벨 없음 (동기화 후 표시)
-                </p>
-              ) : (
-                <div className="space-y-0.5">
-                  {gmailLabels.map(l => {
-                    const id = `label:${l.id}` as MailBoxId;
-                    return (
-                      <NavBtn key={l.id} active={box === id} onClick={() => setBox(id)} indent>
-                        <span className="truncate">{l.name}</span>
+
+            {/* 중메뉴: AI 분류 상태 */}
+            <div className="rounded-xl border border-slate-100 bg-slate-50/80 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleNav('status')}
+                aria-expanded={navOpen.status}
+                className="w-full flex items-center gap-1.5 px-2.5 py-2 text-left hover:bg-slate-100/80 transition-colors"
+              >
+                {navOpen.status
+                  ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                  : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />}
+                <span className="text-[12px] font-bold text-slate-800 tracking-tight">AI 분류 상태</span>
+              </button>
+              {navOpen.status && (
+                <div className="px-1.5 pb-1.5 space-y-0.5 border-t border-slate-100 bg-white ml-0">
+                  <div className="ml-1 border-l-2 border-indigo-100 pl-1 space-y-0.5">
+                    {BOX_STATUS.map(b => (
+                      <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
+                        <span className="truncate">{b.label}</span>
                       </NavBtn>
-                    );
-                  })}
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 중메뉴: Label */}
+            <div className="rounded-xl border border-slate-100 bg-slate-50/80 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleNav('labels')}
+                aria-expanded={navOpen.labels}
+                className="w-full flex items-center gap-1.5 px-2.5 py-2 text-left hover:bg-slate-100/80 transition-colors"
+              >
+                {navOpen.labels
+                  ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                  : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />}
+                <span className="text-[12px] font-bold text-slate-800 tracking-tight">Label</span>
+              </button>
+              {navOpen.labels && (
+                <div className="px-1.5 pb-1.5 border-t border-slate-100 bg-white">
+                  {gmailLabels.length === 0 ? (
+                    <p className="px-2.5 py-1.5 text-[11px] text-slate-400 leading-snug">
+                      Gmail 사용자 라벨 없음 (동기화 후 표시)
+                    </p>
+                  ) : (
+                    <div className="ml-1 border-l-2 border-violet-100 pl-1 space-y-0.5">
+                      {gmailLabels.map(l => {
+                        const id = `label:${l.id}` as MailBoxId;
+                        return (
+                          <NavBtn key={l.id} active={box === id} onClick={() => setBox(id)} indent>
+                            <span className="truncate">{l.name}</span>
+                          </NavBtn>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1014,7 +1058,7 @@ export function MailInboxView() {
               </th>
               <th className="px-3 py-2">제목</th>
               <th className="px-2 py-2 w-[16%]">발신자</th>
-              <th className="px-2 py-2 w-[10.5rem] whitespace-nowrap">수신시각</th>
+              <th className="px-2 py-2 w-[13.5rem] whitespace-nowrap">수신시각</th>
               <th className="px-2 py-2 w-[5.75rem]">상태</th>
               <th className="px-2 py-2 w-[4.25rem] text-right">신뢰도</th>
             </tr>
