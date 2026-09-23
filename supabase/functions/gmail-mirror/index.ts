@@ -110,13 +110,70 @@ async function gmailDeleteForever(accessToken: string, gmailMessageId: string) {
   }
 }
 
+function encodeRfc2047(text: string): string {
+  // ASCII만이면 그대로, 한글 등 있으면 encoded-word
+  if (/^[\x20-\x7E]*$/.test(text)) return text;
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return `=?UTF-8?B?${btoa(bin)}?=`;
+}
+
+function toBase64Url(raw: string): string {
+  const bytes = new TextEncoder().encode(raw);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function buildMimeMessage(opts: {
+  to: string;
+  cc?: string;
+  subject: string;
+  body: string;
+  from?: string;
+}): string {
+  const lines: string[] = [];
+  if (opts.from) lines.push(`From: ${opts.from}`);
+  lines.push(`To: ${opts.to}`);
+  if (opts.cc?.trim()) lines.push(`Cc: ${opts.cc.trim()}`);
+  lines.push(`Subject: ${encodeRfc2047(opts.subject || '(제목 없음)')}`);
+  lines.push('MIME-Version: 1.0');
+  lines.push('Content-Type: text/plain; charset="UTF-8"');
+  lines.push('Content-Transfer-Encoding: 8bit');
+  lines.push('');
+  lines.push(opts.body || '');
+  return lines.join('\r\n');
+}
+
+async function gmailSend(
+  accessToken: string,
+  opts: { to: string; cc?: string; subject: string; body: string },
+) {
+  const raw = toBase64Url(buildMimeMessage(opts));
+  const res = await fetch(`${GMAIL_API}/users/${gmailUser()}/messages/send`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ raw }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(`gmail send ${res.status}: ${JSON.stringify(data).slice(0, 240)}`);
+  }
+  return data as { id?: string; threadId?: string; labelIds?: string[] };
+}
+
 type Action =
   | 'trash'
   | 'untrash'
   | 'star'
   | 'unstar'
   | 'delete_forever'
-  | 'modify_labels';
+  | 'modify_labels'
+  | 'send';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -145,12 +202,39 @@ Deno.serve(async (req) => {
       mail_ids?: number[];
       add_label_ids?: string[];
       remove_label_ids?: string[];
+      to?: string;
+      cc?: string;
+      subject?: string;
+      body?: string;
     };
 
     const action = body.action;
+    if (!action) return json({ error: 'action required' }, 400);
+
+    const accessToken = await getAccessToken();
+
+    // 메일 작성·발송
+    if (action === 'send') {
+      const to = (body.to || '').trim();
+      if (!to) return json({ error: 'to required' }, 400);
+      const sent = await gmailSend(accessToken, {
+        to,
+        cc: body.cc,
+        subject: body.subject || '',
+        body: body.body || '',
+      });
+      // watch/history 가 SENT 를 곧 가져옴. 여기서는 id 만 반환
+      return json({
+        ok: true,
+        action: 'send',
+        gmail_message_id: sent.id ?? null,
+        thread_id: sent.threadId ?? null,
+      });
+    }
+
     const mailIds = [...new Set((body.mail_ids || []).filter(n => Number.isFinite(n) && n > 0))];
-    if (!action || !mailIds.length) {
-      return json({ error: 'action and mail_ids required' }, 400);
+    if (!mailIds.length) {
+      return json({ error: 'mail_ids required' }, 400);
     }
 
     const sb = createClient(supabaseUrl, service, { auth: { persistSession: false } });
@@ -162,7 +246,6 @@ Deno.serve(async (req) => {
     if (selErr) return json({ error: selErr.message }, 500);
     if (!rows?.length) return json({ error: 'mails not found' }, 404);
 
-    const accessToken = await getAccessToken();
     const now = new Date().toISOString();
     const results: { id: number; ok: boolean; error?: string }[] = [];
 

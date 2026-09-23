@@ -18,8 +18,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 const TOAST_VISIBLE = 3;
 const TOAST_CARD_H = 84;
 const TOAST_GAP = 8;
-/** Realtime 누락 대비 폴링 (탭이 보일 때만) */
 const POLL_MS = 12_000;
+const LS_KEY = 'erp_mail_toast_enabled';
 
 export type MailToast = {
   key: string;
@@ -30,6 +30,8 @@ export type MailToast = {
 
 type MailToastContextValue = {
   toasts: MailToast[];
+  enabled: boolean;
+  toggleEnabled: () => void;
   pushToast: (mailId: number, subject?: string | null, fromAddr?: string | null) => void;
   dismissToast: (key: string) => void;
   dismissAllToasts: () => void;
@@ -43,95 +45,156 @@ export function useMailToasts() {
   return ctx;
 }
 
+function readEnabled(): boolean {
+  try {
+    const v = localStorage.getItem(LS_KEY);
+    if (v == null) return true;
+    return v === '1' || v === 'true';
+  } catch {
+    return true;
+  }
+}
+
 function MailToastStack() {
-  const { toasts, dismissToast, dismissAllToasts } = useMailToasts();
+  const { toasts, enabled, toggleEnabled, dismissToast, dismissAllToasts } = useMailToasts();
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState<'on' | 'off' | null>(null);
   const toastMaxH = TOAST_VISIBLE * TOAST_CARD_H + (TOAST_VISIBLE - 1) * TOAST_GAP;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || toasts.length === 0) return;
-    // 최신(맨 아래)이 보이도록, 이후 위로 스크롤해 이전 알림 확인 가능
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
   }, [toasts.length]);
 
-  if (toasts.length === 0) return null;
+  const onToggle = () => {
+    const next = !enabled;
+    toggleEnabled();
+    setFlash(next ? 'on' : 'off');
+    window.setTimeout(() => setFlash(null), 1400);
+  };
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-[60] w-[22rem] max-w-[calc(100vw-2rem)]">
-      <div className="pointer-events-auto flex justify-end mb-1.5">
-        <button
-          type="button"
-          onClick={() => dismissAllToasts()}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800"
-          aria-label="알림 전부 닫기"
-          title="알림 전부 닫기"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      </div>
-      <div
-        ref={scrollRef}
-        className="mail-toast-scroll pointer-events-auto flex flex-col gap-2 overflow-y-auto overscroll-contain pr-1"
-        style={{ maxHeight: toastMaxH }}
-      >
-        <AnimatePresence mode="popLayout" initial={false}>
-          {toasts.map(t => (
-            <motion.div
-              key={t.key}
-              layout
-              initial={{ opacity: 0, y: 28, filter: 'blur(2px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: -18, filter: 'blur(2px)' }}
-              transition={{
-                layout: { type: 'spring', stiffness: 420, damping: 32 },
-                opacity: { duration: 0.28 },
-                y: { type: 'spring', stiffness: 380, damping: 28 },
-              }}
-              className="shrink-0 overflow-hidden rounded-xl border border-orange-200/80 bg-white/95 shadow-lg backdrop-blur-sm"
+    <div className="pointer-events-none fixed bottom-6 right-6 z-[60] flex flex-col items-end gap-2 w-[22rem] max-w-[calc(100vw-2rem)]">
+      <AnimatePresence>
+        {flash && (
+          <motion.div
+            key={flash}
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6 }}
+            className={`pointer-events-none rounded-full px-3 py-1 text-xs font-semibold shadow-md ${
+              flash === 'on'
+                ? 'bg-orange-500 text-white'
+                : 'bg-slate-600 text-white'
+            }`}
+          >
+            {flash === 'on' ? '메일 알림 ON' : '메일 알림 OFF'}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {enabled && toasts.length > 0 && (
+        <>
+          <div className="pointer-events-auto flex justify-end w-full">
+            <button
+              type="button"
+              onClick={() => dismissAllToasts()}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800"
+              aria-label="알림 전부 닫기"
+              title="알림 전부 닫기"
             >
-              <div className="flex items-start gap-2 px-4 py-3">
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 flex items-start gap-2 text-left hover:opacity-90"
-                  onClick={() => {
-                    dismissToast(t.key);
-                    navigate(`/mail/${t.mailId}`);
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div
+            ref={scrollRef}
+            className="mail-toast-scroll pointer-events-auto flex flex-col gap-2 overflow-y-auto overscroll-contain pr-1 w-full"
+            style={{ maxHeight: toastMaxH }}
+          >
+            <AnimatePresence mode="popLayout" initial={false}>
+              {toasts.map(t => (
+                <motion.div
+                  key={t.key}
+                  layout
+                  initial={{ opacity: 0, y: 28, filter: 'blur(2px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: -18, filter: 'blur(2px)' }}
+                  transition={{
+                    layout: { type: 'spring', stiffness: 420, damping: 32 },
+                    opacity: { duration: 0.28 },
+                    y: { type: 'spring', stiffness: 380, damping: 28 },
                   }}
+                  className="shrink-0 overflow-hidden rounded-xl border border-orange-200/80 bg-white/95 shadow-lg backdrop-blur-sm"
                 >
-                  <Mail className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-orange-700">새 메일 도착</p>
-                    <p className="text-xs text-slate-800 mt-0.5 truncate font-medium">{t.subject}</p>
-                    {t.fromAddr && (
-                      <p className="text-[11px] text-slate-500 mt-0.5 truncate">{t.fromAddr}</p>
-                    )}
+                  <div className="flex items-start gap-2 px-4 py-3">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 flex items-start gap-2 text-left hover:opacity-90"
+                      onClick={() => {
+                        dismissToast(t.key);
+                        navigate(`/mail/${t.mailId}`);
+                      }}
+                    >
+                      <Mail className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-orange-700">새 메일 도착</p>
+                        <p className="text-xs text-slate-800 mt-0.5 truncate font-medium">{t.subject}</p>
+                        {t.fromAddr && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">{t.fromAddr}</p>
+                        )}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
+                      aria-label="알림 닫기"
+                      onClick={() => dismissToast(t.key)}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                </button>
-                <button
-                  type="button"
-                  className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
-                  aria-label="알림 닫기"
-                  onClick={() => dismissToast(t.key)}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </>
+      )}
+
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+          enabled
+            ? 'border-orange-300 bg-orange-500 text-white hover:bg-orange-600 scale-100'
+            : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600'
+        }`}
+        aria-pressed={enabled}
+        aria-label={enabled ? '메일 알림 끄기' : '메일 알림 켜기'}
+        title={enabled ? '메일 알림 ON (클릭하여 끄기)' : '메일 알림 OFF (클릭하여 켜기)'}
+      >
+        <Mail className={`w-5 h-5 ${enabled ? 'fill-white/20' : ''}`} />
+        {enabled && (
+          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white" />
+        )}
+      </button>
     </div>
   );
 }
 
 export function MailToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<MailToast[]>([]);
+  const [enabled, setEnabled] = useState(readEnabled);
+  const enabledRef = useRef(enabled);
   const lastSeenIdRef = useRef<number | null>(null);
   const readyRef = useRef(false);
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
 
   const dismissToast = useCallback((key: string) => {
     setToasts(prev => prev.filter(t => t.key !== key));
@@ -141,7 +204,22 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
     setToasts([]);
   }, []);
 
+  const toggleEnabled = useCallback(() => {
+    setEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem(LS_KEY, next ? '1' : '0');
+      } catch { /* ignore */ }
+      if (!next) setToasts([]);
+      return next;
+    });
+  }, []);
+
   const pushToast = useCallback((mailId: number, subject?: string | null, fromAddr?: string | null) => {
+    if (!enabledRef.current) {
+      lastSeenIdRef.current = Math.max(lastSeenIdRef.current ?? 0, mailId);
+      return;
+    }
     setToasts(prev => {
       if (prev.some(t => t.mailId === mailId)) return prev;
       return [
@@ -157,7 +235,6 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
     lastSeenIdRef.current = Math.max(lastSeenIdRef.current ?? 0, mailId);
   }, []);
 
-  // Realtime INSERT + JWT 갱신 + 폴링 백업
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
     let cancelled = false;
@@ -176,6 +253,7 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
 
     const pollNewMails = async () => {
       if (cancelled || document.visibilityState !== 'visible') return;
+      if (!enabledRef.current) return;
       const since = lastSeenIdRef.current;
       if (since == null || !readyRef.current) return;
 
@@ -222,7 +300,6 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
         .subscribe((status, err) => {
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
             console.warn('[mail-toast] realtime', status, err);
-            // 짧게 쉬고 재구독
             window.setTimeout(() => {
               if (!cancelled) void subscribeRealtime();
             }, 2500);
@@ -231,7 +308,6 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
     };
 
     (async () => {
-      // 기준점: 현재 최신 id — 이후 신규만 토스트 (새로고침 시 과거 메일 폭주 방지)
       const { data: latest } = await supabase
         .from('mail_messages')
         .select('id')
@@ -269,8 +345,8 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
   }, [pushToast]);
 
   const value = useMemo(
-    () => ({ toasts, pushToast, dismissToast, dismissAllToasts }),
-    [toasts, pushToast, dismissToast, dismissAllToasts],
+    () => ({ toasts, enabled, toggleEnabled, pushToast, dismissToast, dismissAllToasts }),
+    [toasts, enabled, toggleEnabled, pushToast, dismissToast, dismissAllToasts],
   );
 
   return (

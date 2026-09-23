@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
+import { MailComposeModal } from '@/components/MailComposeModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
@@ -139,6 +140,7 @@ export function MailInboxView() {
   const [aiDetail, setAiDetail] = useState<string | undefined>();
   const [showAiModal, setShowAiModal] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -470,6 +472,15 @@ export function MailInboxView() {
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 sm:space-y-6 relative">
       {showGuide && <MailGuideModal open onClose={() => setShowGuide(false)} />}
+      {showCompose && (
+        <MailComposeModal
+          open
+          onClose={() => setShowCompose(false)}
+          onSent={() => {
+            setBox('sent');
+          }}
+        />
+      )}
       {showAiModal && (
         <AiConnectionModal
           initialUrl={apiBaseUrl}
@@ -585,12 +596,21 @@ export function MailInboxView() {
         </div>
       </div>
 
-      {/* 모바일: 메일함 선택 */}
-      <div className="lg:hidden">
+      {/* 모바일: 메일함 선택 + 작성 */}
+      <div className="lg:hidden flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowCompose(true)}
+          className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700"
+          aria-label="새 메일 작성"
+          title="새 메일 작성"
+        >
+          <MailPlus className="w-5 h-5" />
+        </button>
         <label className="sr-only" htmlFor="mail-box-select">메일함</label>
         <select
           id="mail-box-select"
-          className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
+          className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
           value={box}
           onChange={e => setBox(e.target.value as MailBoxId)}
         >
@@ -618,6 +638,17 @@ export function MailInboxView() {
         {/* 데스크톱 left 메뉴 */}
         <aside className="hidden lg:block w-52 shrink-0 sticky top-4 self-start">
           <nav className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm space-y-3">
+            <div className="px-1 pt-0.5">
+              <button
+                type="button"
+                onClick={() => setShowCompose(true)}
+                className="w-full flex items-center justify-center gap-0 rounded-xl py-2.5 bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                aria-label="새 메일 작성"
+                title="새 메일 작성"
+              >
+                <MailPlus className="w-5 h-5" />
+              </button>
+            </div>
             <div>
               <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">메일함</p>
               <div className="space-y-0.5">
@@ -684,6 +715,9 @@ export function MailInboxView() {
               }}
             />
           </div>
+
+          {/* 모바일·태블릿: 카드 리스트 */}
+          <div className="lg:hidden space-y-2">
         <div className="flex items-center gap-2 px-1">
           <MailSelectCheckbox
             checked={allPageSelected}

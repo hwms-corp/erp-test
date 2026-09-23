@@ -59,3 +59,36 @@ export async function mirrorToGmail(opts: {
     error: (json as { error?: string }).error,
   };
 }
+
+/** Gmail 새 메일 발송 */
+export async function sendGmailMessage(opts: {
+  to: string;
+  cc?: string;
+  subject: string;
+  body: string;
+}): Promise<{ ok: boolean; gmailMessageId?: string | null; error?: string }> {
+  if (!supabaseUrl) throw new Error('Supabase URL 없음');
+  const headers = await authHeader();
+  const res = await fetch(`${supabaseUrl}/functions/v1/gmail-mirror`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      action: 'send',
+      to: opts.to,
+      cc: opts.cc,
+      subject: opts.subject,
+      body: opts.body,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !(json as { ok?: boolean }).ok) {
+    return {
+      ok: false,
+      error: (json as { error?: string }).error || `send ${res.status}`,
+    };
+  }
+  return {
+    ok: true,
+    gmailMessageId: (json as { gmail_message_id?: string | null }).gmail_message_id ?? null,
+  };
+}
