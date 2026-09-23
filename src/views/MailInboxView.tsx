@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Children, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ChevronDown, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
@@ -147,14 +147,15 @@ const BOX_STATUS: { id: MailProcessStatus; label: string }[] = [
 ];
 
 function boxIcon(kind: (typeof BOX_MAIN)[number]['icon'], className = 'w-4 h-4') {
-  if (kind === 'latest') return <Clock className={className} />;
-  if (kind === 'sent') return <Send className={className} />;
-  if (kind === 'read') return <MailOpen className={className} />;
-  if (kind === 'unread') return <Mail className={className} />;
-  if (kind === 'star') return <Star className={className} />;
-  if (kind === 'trash') return <Trash2 className={className} />;
-  if (kind === 'all') return <FolderOpen className={className} />;
-  return <Inbox className={className} />;
+  if (kind === 'latest') return <Clock className={`${className} text-indigo-500`} />;
+  if (kind === 'sent') return <Send className={`${className} text-sky-600`} />;
+  if (kind === 'read') return <MailOpen className={`${className} text-slate-500`} />;
+  if (kind === 'unread') return <Mail className={`${className} text-orange-500`} />;
+  if (kind === 'star') return <Star className={`${className} text-amber-400 fill-amber-400`} />;
+  if (kind === 'trash') return <Trash2 className={`${className} text-red-500`} />;
+  if (kind === 'all') return <FolderOpen className={`${className} text-slate-500`} />;
+  // inbox
+  return <Inbox className={`${className} text-emerald-600`} />;
 }
 
 /** 모바일 가로 칩 메뉴 — 넘치면 좌우 화살표로 스크롤 */
@@ -587,16 +588,43 @@ export function MailInboxView() {
       type="button"
       onClick={onClick}
       className={`w-full flex items-center gap-2 rounded-lg text-left text-[13px] font-medium transition-colors ${
-        indent ? 'pl-7 pr-2 py-1.5' : 'px-2.5 py-2'
+        indent ? 'pl-2 pr-2 py-1.5' : 'px-2.5 py-2'
       } ${
         active
-          ? 'bg-indigo-600 text-white'
+          ? 'bg-indigo-50 text-indigo-800 ring-1 ring-inset ring-indigo-100'
           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
       }`}
     >
       {children}
     </button>
   );
+
+  /** 하위메뉴 트리 연결선 (└ / ├ 형태) */
+  const TreeBranch = ({ children }: { children: ReactNode }) => {
+    const items = Children.toArray(children);
+    return (
+      <ul className="relative ml-3 mt-0.5 mb-0.5 list-none p-0">
+        {items.map((child, i) => {
+          const last = i === items.length - 1;
+          return (
+            <li key={(child as { key?: string | null })?.key ?? i} className="relative pl-4">
+              <span
+                className={`pointer-events-none absolute left-0 w-px bg-slate-300 ${
+                  last ? 'top-0 h-1/2' : 'inset-y-0'
+                }`}
+                aria-hidden
+              />
+              <span
+                className="pointer-events-none absolute left-0 top-1/2 w-3.5 h-px -translate-y-px bg-slate-300"
+                aria-hidden
+              />
+              {child}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 sm:space-y-6 relative">
@@ -753,7 +781,7 @@ export function MailInboxView() {
                       : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <span className={active ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
+                  <span>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
                   {b.label}
                 </button>
               );
@@ -845,13 +873,15 @@ export function MailInboxView() {
                 <span className="text-[12px] font-bold text-slate-800 tracking-tight">메일함</span>
               </button>
               {navOpen.folders && (
-                <div className="px-1.5 pb-1.5 space-y-0.5 border-t border-slate-100 bg-white">
-                  {BOX_MAIN.map(b => (
-                    <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)}>
-                      <span className={box === b.id ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon)}</span>
-                      <span className="truncate">{b.label}</span>
-                    </NavBtn>
-                  ))}
+                <div className="px-1.5 pb-1.5 border-t border-slate-100 bg-white">
+                  <TreeBranch>
+                    {BOX_MAIN.map(b => (
+                      <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
+                        {boxIcon(b.icon)}
+                        <span className="truncate">{b.label}</span>
+                      </NavBtn>
+                    ))}
+                  </TreeBranch>
                 </div>
               )}
             </div>
@@ -870,14 +900,14 @@ export function MailInboxView() {
                 <span className="text-[12px] font-bold text-slate-800 tracking-tight">AI 분류 상태</span>
               </button>
               {navOpen.status && (
-                <div className="px-1.5 pb-1.5 space-y-0.5 border-t border-slate-100 bg-white ml-0">
-                  <div className="ml-1 border-l-2 border-indigo-100 pl-1 space-y-0.5">
+                <div className="px-1.5 pb-1.5 border-t border-slate-100 bg-white">
+                  <TreeBranch>
                     {BOX_STATUS.map(b => (
                       <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
                         <span className="truncate">{b.label}</span>
                       </NavBtn>
                     ))}
-                  </div>
+                  </TreeBranch>
                 </div>
               )}
             </div>
@@ -902,7 +932,7 @@ export function MailInboxView() {
                       Gmail 사용자 라벨 없음 (동기화 후 표시)
                     </p>
                   ) : (
-                    <div className="ml-1 border-l-2 border-violet-100 pl-1 space-y-0.5">
+                    <TreeBranch>
                       {gmailLabels.map(l => {
                         const id = `label:${l.id}` as MailBoxId;
                         return (
@@ -911,7 +941,7 @@ export function MailInboxView() {
                           </NavBtn>
                         );
                       })}
-                    </div>
+                    </TreeBranch>
                   )}
                 </div>
               )}
