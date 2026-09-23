@@ -492,7 +492,7 @@ function isOcrCandidate(filename: string, mime: string | null): boolean {
 }
 
 /** 높을수록 우선. CID 작은 로고만 제외, 큰 CID(견적표)는 포함 */
-const MIN_CID_IMAGE_OCR_BYTES = 20 * 1024;
+const MIN_CID_IMAGE_OCR_BYTES = 5 * 1024;
 
 function ocrCandidatePriority(
   filename: string,
@@ -644,7 +644,8 @@ function decideProcessStatus(extraction: CanonicalExtraction): 'ready_auto' | 'r
     i => i.product_name?.value && i.quantity?.value != null,
   );
   const hasDocNo = !!extraction.request?.document_no?.value?.toString().trim();
-  if (conf >= 0.95 && hasCustomer && hasItems && hasDocNo) return 'ready_auto';
+  // ERP mailMatching 과 동일 기준 (0.85)
+  if (conf >= 0.85 && hasCustomer && hasItems && hasDocNo) return 'ready_auto';
   return 'review_required';
 }
 
@@ -689,12 +690,29 @@ async function runAiForMail(
   }
 
   const syncJobId = `sync_${crypto.randomUUID()}`;
-  await sb.from('mail_messages').update({
-    process_status: 'classifying',
-    error_message: null,
-    status_reason: null,
-    ai_job_id: syncJobId,
-  }).eq('id', mailId);
+
+  // 동시 push 레이스 방지: received/failed 일 때만 classifying 으로 선점
+  const { data: claimed, error: claimErr } = await sb
+    .from('mail_messages')
+    .update({
+      process_status: 'classifying',
+      error_message: null,
+      status_reason: null,
+      ai_job_id: syncJobId,
+    })
+    .eq('id', mailId)
+    .in('process_status', ['received', 'failed'])
+    .select('id')
+    .maybeSingle();
+
+  if (claimErr) {
+    console.error('AI claim failed', mailId, claimErr);
+    return { status: 'failed', error: String(claimErr) };
+  }
+  if (!claimed) {
+    console.log('AI skip — already claimed/processing', mailId);
+    return { status: 'skipped', skipped: true };
+  }
 
   await sb.from('mail_ai_jobs').upsert(
     {
@@ -975,7 +993,8 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       if (
         existing &&
         existing.process_status &&
-        !['received', 'failed', 'classifying', 'extracting'].includes(existing.process_status)
+        // received/failed 만 재처리. classifying/extracting 재진입 시 job 중복 발생
+        !['received', 'failed'].includes(existing.process_status)
       ) {
         console.log('skip already processed', msg.id, existing.process_status);
         return { synced: 0 as const, ai: null as { mailId: number; status: string } | null };

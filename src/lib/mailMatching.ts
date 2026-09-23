@@ -161,6 +161,7 @@ export function decideProcessStatus(extraction: CanonicalExtraction): 'ready_aut
   const hasItems = extraction.items.some(i => i.product_name.value && i.quantity.value != null);
   // 문서번호 없어도 등록은 가능. 없으면 검토필수로 둠
   const hasDocNo = !!extraction.request.document_no?.value?.toString().trim();
-  if (conf >= 0.95 && hasCustomer && hasItems && hasDocNo) return 'ready_auto';
+  // 실측 overall_confidence 가 대개 ~0.90 이라 0.95는 사실상 자동후보 불가 → 0.85로 조정
+  if (conf >= 0.85 && hasCustomer && hasItems && hasDocNo) return 'ready_auto';
   return 'review_required';
 }

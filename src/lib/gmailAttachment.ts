@@ -90,7 +90,7 @@ export function isOcrCandidate(filename: string, mime: string | null | undefined
  * - PDF/xlsx 최우선
  * - CID 인라인: 작은 로고/서명만 제외, 일정 크기 이상(견적 표 이미지)은 포함
  */
-const MIN_CID_IMAGE_OCR_BYTES = 20 * 1024;
+const MIN_CID_IMAGE_OCR_BYTES = 5 * 1024;
 
 export function ocrCandidatePriority(
   filename: string,
