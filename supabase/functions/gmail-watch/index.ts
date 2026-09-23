@@ -434,13 +434,11 @@ function stripQuotedReplyHtml(html: string | null | undefined): string {
   return out.trim();
 }
 
-/** INBOX만 동기화 — SENT/DRAFT/SPAM/TRASH 제외 */
-function isInboxMessage(labelIds: string[] | undefined): boolean {
+/** INBOX/SENT 동기화 — DRAFT/SPAM/TRASH 제외 */
+function shouldSyncMessage(labelIds: string[] | undefined): boolean {
   const labels = labelIds || [];
-  if (!labels.includes('INBOX')) return false;
   if (labels.includes('DRAFT') || labels.includes('SPAM') || labels.includes('TRASH')) return false;
-  // SENT만 있고 INBOX가 없는 경우는 위에서 걸러짐. INBOX+SENT 동시(드묾)는 수신으로 허용.
-  return true;
+  return labels.includes('INBOX') || labels.includes('SENT');
 }
 
 function collectAttachmentMeta(payload: GmailPayload | undefined) {
@@ -810,9 +808,10 @@ async function registerWatch(accessToken: string) {
   const mailbox = Deno.env.get('GMAIL_USER')?.trim() || 'me';
   const sb = adminClient();
 
+  // INBOX+SENT 변경 수신 (labelIds 생략 시 전체 mailbox — DRAFT 등은 shouldSyncMessage에서 걸러짐)
   const watch = await gmailPost(`/users/${gmailUser()}/watch`, accessToken, {
     topicName,
-    labelIds: ['INBOX'],
+    labelIds: ['INBOX', 'SENT'],
   });
 
   const historyId = String(watch.historyId ?? '');
@@ -892,18 +891,26 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
   }
 
   const messageIds = new Set<string>();
+  const metaRefreshIds = new Set<string>();
+  const deletedIds = new Set<string>();
   let pageToken: string | undefined;
   let newestHistoryId = startHistoryId;
 
   do {
-    const qs = new URLSearchParams({
-      startHistoryId,
-      historyTypes: 'messageAdded',
-    });
+    const qs = new URLSearchParams({ startHistoryId });
+    for (const t of ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'] as const) {
+      qs.append('historyTypes', t);
+    }
     if (pageToken) qs.set('pageToken', pageToken);
 
     let hist: {
-      history?: { messagesAdded?: { message?: { id?: string } }[]; id?: string }[];
+      history?: {
+        id?: string;
+        messagesAdded?: { message?: { id?: string } }[];
+        messagesDeleted?: { message?: { id?: string } }[];
+        labelsAdded?: { message?: { id?: string }; labelIds?: string[] }[];
+        labelsRemoved?: { message?: { id?: string }; labelIds?: string[] }[];
+      }[];
       historyId?: string;
       nextPageToken?: string;
     };
@@ -932,10 +939,69 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       for (const m of h.messagesAdded || []) {
         if (m.message?.id) messageIds.add(m.message.id);
       }
+      for (const m of h.messagesDeleted || []) {
+        if (m.message?.id) deletedIds.add(m.message.id);
+      }
+      for (const m of h.labelsAdded || []) {
+        if (m.message?.id) metaRefreshIds.add(m.message.id);
+      }
+      for (const m of h.labelsRemoved || []) {
+        if (m.message?.id) metaRefreshIds.add(m.message.id);
+      }
     }
     if (hist.historyId) newestHistoryId = String(hist.historyId);
     pageToken = hist.nextPageToken;
   } while (pageToken);
+
+  // 영구삭제·휴지통 이동 등 — DB soft-delete
+  let labelSynced = 0;
+  for (const gid of deletedIds) {
+    const now = new Date().toISOString();
+    const { data } = await sb
+      .from('mail_messages')
+      .update({ deleted_at: now, updated_at: now })
+      .eq('gmail_message_id', gid)
+      .is('deleted_at', null)
+      .select('id');
+    if (data?.length) labelSynced += data.length;
+  }
+
+  // 라벨/별표/휴지통 변경 — 메타만 갱신 (AI 재실행 없음)
+  for (const gid of metaRefreshIds) {
+    if (messageIds.has(gid) || deletedIds.has(gid)) continue;
+    try {
+      const msg = await gmailGet(
+        `/users/${gmailUser()}/messages/${gid}?format=metadata&metadataHeaders=Subject`,
+        accessToken,
+      );
+      const labels = (msg.labelIds || []) as string[];
+      const now = new Date().toISOString();
+      const isSentOnly = labels.includes('SENT') && !labels.includes('INBOX');
+      const inTrash = labels.includes('TRASH');
+      const patch: Record<string, unknown> = {
+        gmail_label_ids: labels,
+        is_sent: isSentOnly,
+        is_starred: labels.includes('STARRED'),
+        is_read: !labels.includes('UNREAD'),
+        updated_at: now,
+        deleted_at: inTrash ? now : null,
+      };
+      if (labels.includes('STARRED')) {
+        // starred_at 은 최초 별표 시각 유지 위해 별도 조회 없이 now 로만 채움(이미 별표면 덮어씀 OK)
+        patch.starred_at = now;
+      } else {
+        patch.starred_at = null;
+      }
+      const { data } = await sb
+        .from('mail_messages')
+        .update(patch)
+        .eq('gmail_message_id', gid)
+        .select('id');
+      if (data?.length) labelSynced += data.length;
+    } catch (e) {
+      console.error('label meta refresh failed', gid, e);
+    }
+  }
 
   const MAIL_CONCURRENCY = Math.max(1, Math.min(10, Number(Deno.env.get('MAIL_AI_CONCURRENCY') || 5)));
 
@@ -967,10 +1033,11 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       );
 
       const labels = (msg.labelIds || []) as string[];
-      if (!isInboxMessage(labels)) {
-        console.log('skip non-inbox message', msg.id, labels.join(','));
+      if (!shouldSyncMessage(labels)) {
+        console.log('skip non-sync message', msg.id, labels.join(','));
         return { synced: 0 as const, ai: null as { mailId: number; status: string } | null };
       }
+      const isSentOnly = labels.includes('SENT') && !labels.includes('INBOX');
 
       const headers = (msg.payload?.headers || []) as GmailHeader[];
       const collected = collectText(msg.payload as GmailPayload);
@@ -1012,7 +1079,15 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
         snippet: msg.snippet ?? null,
         body_text: text,
         body_html: html,
-        process_status: existing?.process_status === 'failed' ? 'received' : (existing?.process_status || 'received'),
+        process_status: existing?.process_status === 'failed'
+          ? 'received'
+          : (existing?.process_status || (isSentOnly ? 'rejected' : 'received')),
+        gmail_label_ids: labels,
+        is_sent: isSentOnly,
+        is_starred: labels.includes('STARRED'),
+        ...(isSentOnly && !existing
+          ? { is_rfq: false, status_reason: '보낸 메일 — AI 분류 생략' }
+          : {}),
       };
 
       const { data: row, error } = existing
@@ -1045,6 +1120,11 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
             content_id: a.content_id,
           })),
         );
+      }
+
+      // 보낸메일만 있는 건은 AI 생략 (저장만)
+      if (isSentOnly) {
+        return { synced: 1 as const, ai: { mailId: row.id, status: 'skipped_sent' } };
       }
 
       const subjectLine = headerValue(headers, 'Subject');
@@ -1085,9 +1165,151 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
 
   return {
     synced,
+    labelSynced,
     ai: aiResults,
     historyId: incomingHistoryId || newestHistoryId,
     concurrency: MAIL_CONCURRENCY,
+  };
+}
+
+/** 기존 Gmail 메일 백필 — DB 저장만, AI 미실행. 호출당 maxPerRun 건만 처리(타임아웃 방지), pageToken으로 이어가기 */
+async function backfillMailbox(
+  accessToken: string,
+  opts?: { pageToken?: string | null; maxPerRun?: number; pageSize?: number },
+) {
+  const maxPerRun = Math.min(Math.max(opts?.maxPerRun ?? 80, 1), 150);
+  const pageSize = Math.min(Math.max(opts?.pageSize ?? 50, 1), 100);
+  const sb = adminClient();
+
+  let imported = 0;
+  let skipped = 0;
+  let scanned = 0;
+  const errors: string[] = [];
+  let pageToken: string | undefined = opts?.pageToken || undefined;
+  let done = false;
+
+  while (true) {
+    const qs = new URLSearchParams({
+      // labelIds 없음 = 메일함 전체(스팸/휴지통 제외가 Gmail 기본)
+      maxResults: String(pageSize),
+    });
+    if (pageToken) qs.set('pageToken', pageToken);
+
+    const list = await gmailGet(
+      `/users/${gmailUser()}/messages?${qs}`,
+      accessToken,
+    ) as { messages?: { id?: string }[]; nextPageToken?: string };
+
+    const ids = (list.messages || []).map(m => m.id).filter(Boolean) as string[];
+    if (!ids.length) {
+      done = true;
+      pageToken = undefined;
+      break;
+    }
+
+    // 페이지는 끝까지 처리 (중간에 끊으면 해당 페이지 잔여 메일 유실)
+    for (const id of ids) {
+      scanned += 1;
+      try {
+        const { data: existing } = await sb
+          .from('mail_messages')
+          .select('id')
+          .eq('gmail_message_id', id)
+          .maybeSingle();
+        if (existing) {
+          skipped += 1;
+          continue;
+        }
+
+        const msg = await gmailGet(
+          `/users/${gmailUser()}/messages/${id}?format=full`,
+          accessToken,
+        );
+        const labels = (msg.labelIds || []) as string[];
+        // 백필: DRAFT/SPAM/TRASH 만 제외 (사용자 라벨만 있는 메일도 수입)
+        if (
+          labels.includes('DRAFT') ||
+          labels.includes('SPAM') ||
+          labels.includes('TRASH')
+        ) {
+          skipped += 1;
+          continue;
+        }
+        const isSentOnly = labels.includes('SENT') && !labels.includes('INBOX');
+        const headers = (msg.payload?.headers || []) as GmailHeader[];
+        const collected = collectText(msg.payload as GmailPayload);
+        const text = stripQuotedReplyText(collected.text) || null;
+        const html = collected.html || null;
+        const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
+        // Gmail internalDate = 실제 수신(또는 발송) epoch ms
+        const internalDate = msg.internalDate
+          ? new Date(Number(msg.internalDate)).toISOString()
+          : new Date().toISOString();
+
+        const { data: row, error } = await sb
+          .from('mail_messages')
+          .insert({
+            gmail_message_id: msg.id,
+            gmail_thread_id: msg.threadId ?? null,
+            subject: headerValue(headers, 'Subject'),
+            from_addr: headerValue(headers, 'From'),
+            to_addr: headerValue(headers, 'To'),
+            received_at: internalDate,
+            snippet: msg.snippet ?? null,
+            body_text: text,
+            body_html: html,
+            process_status: isSentOnly ? 'rejected' : 'received',
+            is_rfq: false,
+            status_reason: '백필 수입 — AI 미실행 (필요 시 재실행)',
+            gmail_label_ids: labels,
+            is_sent: isSentOnly,
+            is_starred: labels.includes('STARRED'),
+            is_read: !labels.includes('UNREAD'),
+          })
+          .select('id')
+          .single();
+
+        if (error || !row) {
+          errors.push(`${id}: ${error?.message || 'insert fail'}`);
+          continue;
+        }
+
+        if (attachments.length) {
+          await sb.from('mail_attachments').insert(
+            attachments.map(a => ({
+              mail_message_id: row.id,
+              filename: a.filename,
+              mime_type: a.mime_type,
+              size_bytes: a.size_bytes,
+              gmail_attachment_id: a.attachment_id,
+              content_id: a.content_id,
+            })),
+          );
+        }
+        imported += 1;
+      } catch (e) {
+        errors.push(`${id}: ${String(e).slice(0, 120)}`);
+      }
+    }
+
+    pageToken = list.nextPageToken;
+    if (!pageToken) {
+      done = true;
+      break;
+    }
+    // 한도 도달 시 다음 페이지 토큰 유지 → 다음 호출에서 이어감
+    if (scanned >= maxPerRun) break;
+  }
+
+  return {
+    maxPerRun,
+    scanned,
+    imported,
+    skipped,
+    done,
+    nextPageToken: done ? null : (pageToken || null),
+    errorCount: errors.length,
+    errors: errors.slice(0, 20),
   };
 }
 
@@ -1119,6 +1341,44 @@ Deno.serve(async (req) => {
     if (action === 'renew-if-needed') {
       const result = await maybeRenewWatch(accessToken, 48);
       return json({ ok: true, ...result });
+    }
+
+    // 기존 메일 백필 (AI 없음). body: { pageToken?, maxPerRun? } — 반복 호출로 전체 수입
+    if (action === 'backfill') {
+      let bodyJson: { pageToken?: string | null; maxPerRun?: number } = {};
+      try {
+        bodyJson = (await req.json()) as typeof bodyJson;
+      } catch {
+        bodyJson = {};
+      }
+      const maxPerRun = Number(url.searchParams.get('max') || bodyJson.maxPerRun || 80) || 80;
+      const pageToken = bodyJson.pageToken || url.searchParams.get('pageToken') || null;
+      const result = await backfillMailbox(accessToken, { pageToken, maxPerRun });
+      return json({ ok: true, backfill: result });
+    }
+
+    // Gmail 라벨 목록 → gmail_labels 캐시
+    if (action === 'sync-labels') {
+      const mailbox = Deno.env.get('GMAIL_USER')?.trim() || 'me';
+      const sb = adminClient();
+      const res = await gmailGet(`/users/${gmailUser()}/labels`, accessToken) as {
+        labels?: { id?: string; name?: string; type?: string; messageListVisibility?: string }[];
+      };
+      const rows = (res.labels || [])
+        .filter(l => l.id && l.name)
+        .map(l => ({
+          id: String(l.id),
+          mailbox,
+          name: String(l.name),
+          label_type: String(l.type || 'user'),
+          message_list_visibility: l.messageListVisibility ?? null,
+          updated_at: new Date().toISOString(),
+        }));
+      if (rows.length) {
+        const { error } = await sb.from('gmail_labels').upsert(rows, { onConflict: 'id' });
+        if (error) throw new Error(error.message);
+      }
+      return json({ ok: true, labels: rows.length });
     }
 
     const body = (await req.json()) as PubSubPush;

@@ -164,11 +164,34 @@ export interface MailMessage {
   status_reason?: string | null;
   is_starred?: boolean;
   starred_at?: string | null;
+  /** Gmail SENT 라벨 — 보낸메일함 */
+  is_sent?: boolean;
+  /** Gmail labelIds 스냅샷 */
+  gmail_label_ids?: string[] | null;
   is_read: boolean;
   read_at: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+}
+
+/** 리스트 left 메일함 폴더 */
+export type MailBoxId =
+  | 'all'
+  | 'inbox'
+  | 'sent'
+  | 'starred'
+  | 'trash'
+  | MailProcessStatus
+  | `label:${string}`;
+
+export interface GmailLabelRow {
+  id: string;
+  mailbox: string;
+  name: string;
+  label_type: string;
+  message_list_visibility: string | null;
+  updated_at: string;
 }
 
 export interface MailAttachment {

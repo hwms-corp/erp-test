@@ -56,8 +56,19 @@ export function isPreviewableMime(mime: string | null | undefined, filename: str
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();
   if (m.startsWith('image/')) return true;
-  if (m === 'application/pdf' || f.endsWith('.pdf')) return true;
-  if (m.startsWith('text/') || f.endsWith('.txt') || f.endsWith('.csv')) return true;
+  if (m.includes('pdf') || f.endsWith('.pdf')) return true;
+  if (
+    f.endsWith('.xlsx') ||
+    f.endsWith('.xlsm') ||
+    f.endsWith('.xls') ||
+    f.endsWith('.csv') ||
+    m.includes('spreadsheet') ||
+    m.includes('excel') ||
+    m === 'text/csv'
+  ) {
+    return true;
+  }
+  if (m.startsWith('text/') || f.endsWith('.txt') || f.endsWith('.eml')) return true;
   return false;
 }
 

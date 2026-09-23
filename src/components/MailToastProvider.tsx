@@ -32,6 +32,7 @@ type MailToastContextValue = {
   toasts: MailToast[];
   pushToast: (mailId: number, subject?: string | null, fromAddr?: string | null) => void;
   dismissToast: (key: string) => void;
+  dismissAllToasts: () => void;
 };
 
 const MailToastContext = createContext<MailToastContextValue | null>(null);
@@ -43,7 +44,7 @@ export function useMailToasts() {
 }
 
 function MailToastStack() {
-  const { toasts, dismissToast } = useMailToasts();
+  const { toasts, dismissToast, dismissAllToasts } = useMailToasts();
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastMaxH = TOAST_VISIBLE * TOAST_CARD_H + (TOAST_VISIBLE - 1) * TOAST_GAP;
@@ -61,6 +62,17 @@ function MailToastStack() {
 
   return (
     <div className="pointer-events-none fixed bottom-6 right-6 z-[60] w-[22rem] max-w-[calc(100vw-2rem)]">
+      <div className="pointer-events-auto flex justify-end mb-1.5">
+        <button
+          type="button"
+          onClick={() => dismissAllToasts()}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white/95 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800"
+          aria-label="알림 전부 닫기"
+          title="알림 전부 닫기"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
       <div
         ref={scrollRef}
         className="mail-toast-scroll pointer-events-auto flex flex-col gap-2 overflow-y-auto overscroll-contain pr-1"
@@ -123,6 +135,10 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
 
   const dismissToast = useCallback((key: string) => {
     setToasts(prev => prev.filter(t => t.key !== key));
+  }, []);
+
+  const dismissAllToasts = useCallback(() => {
+    setToasts([]);
   }, []);
 
   const pushToast = useCallback((mailId: number, subject?: string | null, fromAddr?: string | null) => {
@@ -253,8 +269,8 @@ export function MailToastProvider({ children }: { children: ReactNode }) {
   }, [pushToast]);
 
   const value = useMemo(
-    () => ({ toasts, pushToast, dismissToast }),
-    [toasts, pushToast, dismissToast],
+    () => ({ toasts, pushToast, dismissToast, dismissAllToasts }),
+    [toasts, pushToast, dismissToast, dismissAllToasts],
   );
 
   return (

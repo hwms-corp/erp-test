@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileText, Search, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileText, Search, Sparkles } from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,6 +9,7 @@ import { PartnerSearchModal } from '@/components/PartnerSearchModal';
 import { MaterialEditor } from '@/components/MaterialEditor';
 import { ExtractionKvTable } from '@/components/ExtractionKvTable';
 import { MailHtmlBody } from '@/components/MailHtmlBody';
+import { AttachmentPreviewModal } from '@/components/AttachmentPreviewModal';
 import {
   applyOrderFormToExtraction,
   extractionToMaterialLines,
@@ -40,6 +41,7 @@ type PreviewState = {
   filename: string;
   mimeType: string;
   url: string;
+  blob: Blob;
 } | null;
 
 function hydrateFormFromExtraction(ext: CanonicalExtraction | null | undefined) {
@@ -219,7 +221,12 @@ export function MailReviewView() {
       const url = URL.createObjectURL(result.blob);
       setPreview(prev => {
         if (prev?.url) URL.revokeObjectURL(prev.url);
-        return { filename: result.filename || att.filename, mimeType: result.mimeType, url };
+        return {
+          filename: result.filename || att.filename,
+          mimeType: result.mimeType,
+          url,
+          blob: result.blob,
+        };
       });
     } finally {
       setAttBusyId(null);
@@ -669,33 +676,19 @@ export function MailReviewView() {
       )}
 
       {preview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePreview}>
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200">
-              <h3 className="font-medium text-slate-800 truncate">{preview.filename}</h3>
-              <button
-                type="button"
-                onClick={closePreview}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
-                aria-label="닫기"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 bg-slate-50 p-2 overflow-auto">
-              {preview.mimeType.startsWith('image/') ? (
-                <img src={preview.url} alt={preview.filename} className="max-w-full max-h-[75vh] mx-auto object-contain" />
-              ) : preview.mimeType === 'application/pdf' || preview.filename.toLowerCase().endsWith('.pdf') ? (
-                <iframe title={preview.filename} src={preview.url} className="w-full h-[75vh] rounded-lg bg-white" />
-              ) : (
-                <iframe title={preview.filename} src={preview.url} className="w-full h-[75vh] rounded-lg bg-white" />
-              )}
-            </div>
-          </div>
-        </div>
+        <AttachmentPreviewModal
+          filename={preview.filename}
+          mimeType={preview.mimeType}
+          blob={preview.blob}
+          url={preview.url}
+          onClose={closePreview}
+          onDownload={() => {
+            const a = document.createElement('a');
+            a.href = preview.url;
+            a.download = preview.filename;
+            a.click();
+          }}
+        />
       )}
     </motion.div>
   );

@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
+import { MailGuideModal } from '@/components/MailGuideModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
 import { supabase } from '@/lib/supabase';
-import type { MailMessage, MailProcessStatus } from '@/types/aiMail';
+import type { GmailLabelRow, MailBoxId, MailMessage, MailProcessStatus } from '@/types/aiMail';
 
 /** 한국시간 YYYY/MM/DD HH:mm:ss (개행 없음) */
 function formatReceivedAtKst(iso: string | null | undefined): string {
@@ -94,10 +95,38 @@ const AI_STATUS_TONE: Record<AiHealthStatus, string> = {
   unconfigured: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
+const BOX_MAIN: { id: MailBoxId; label: string; icon: 'inbox' | 'all' | 'sent' | 'star' | 'trash' }[] = [
+  { id: 'all', label: '전체메일함', icon: 'all' },
+  { id: 'inbox', label: '받은메일함', icon: 'inbox' },
+  { id: 'sent', label: '보낸메일함', icon: 'sent' },
+  { id: 'starred', label: '즐겨찾기', icon: 'star' },
+  { id: 'trash', label: '휴지통', icon: 'trash' },
+];
+
+const BOX_STATUS: { id: MailProcessStatus; label: string }[] = [
+  { id: 'received', label: '수신' },
+  { id: 'classifying', label: '분류중' },
+  { id: 'extracting', label: '추출중' },
+  { id: 'review_required', label: '검토필요' },
+  { id: 'ready_auto', label: '자동후보' },
+  { id: 'registered', label: '견적등록' },
+  { id: 'rejected', label: '비견적' },
+  { id: 'failed', label: '실패' },
+];
+
+function boxIcon(kind: (typeof BOX_MAIN)[number]['icon'], className = 'w-4 h-4') {
+  if (kind === 'sent') return <Send className={className} />;
+  if (kind === 'star') return <Star className={className} />;
+  if (kind === 'trash') return <Trash2 className={className} />;
+  if (kind === 'all') return <FolderOpen className={className} />;
+  return <Inbox className={className} />;
+}
+
 export function MailInboxView() {
   const { user } = useAuth();
-  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, setMailStarred } = useMail();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, restoreMails, hardDeleteMails, setMailStarred, fetchGmailLabels } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
+  const [gmailLabels, setGmailLabels] = useState<GmailLabelRow[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
@@ -109,15 +138,41 @@ export function MailInboxView() {
   const [aiStatus, setAiStatus] = useState<AiHealthStatus>('checking');
   const [aiDetail, setAiDetail] = useState<string | undefined>();
   const [showAiModal, setShowAiModal] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const isAdmin = user?.role === 'admin';
-  const status = searchParams.get('status') || '';
+  /** URL: box 우선, 구 status= 호환 */
+  const boxParam = searchParams.get('box') || searchParams.get('status') || 'inbox';
+  const box = boxParam as MailBoxId;
+  const inTrash = box === 'trash';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+
+  const setBox = useCallback((next: MailBoxId) => {
+    setSearchParams(prev => {
+      const n = new URLSearchParams(prev);
+      n.set('box', next);
+      n.delete('status');
+      n.set('page', '1');
+      return n;
+    });
+  }, [setSearchParams]);
+
+  const currentBoxLabel = useMemo(() => {
+    const main = BOX_MAIN.find(b => b.id === box);
+    if (main) return main.label;
+    const st = BOX_STATUS.find(b => b.id === box);
+    if (st) return st.label;
+    if (typeof box === 'string' && box.startsWith('label:')) {
+      const id = box.slice('label:'.length);
+      return gmailLabels.find(l => l.id === id)?.name || '라벨';
+    }
+    return '메일함';
+  }, [box, gmailLabels]);
 
   const refreshAiHealth = useCallback(async () => {
     setAiStatus('checking');
@@ -142,10 +197,15 @@ export function MailInboxView() {
     await refreshAiHealth();
   }, [fetchMailAiSettings, refreshAiHealth]);
 
+  const loadLabels = useCallback(async () => {
+    const { data } = await fetchGmailLabels();
+    setGmailLabels(data ?? []);
+  }, [fetchGmailLabels]);
+
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     const { data, count } = await fetchMails({
-      status: status || undefined,
+      box,
       q: q || undefined,
       page,
       pageSize: PAGE_SIZE,
@@ -159,11 +219,12 @@ export function MailInboxView() {
       return next;
     });
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, status, q, page]);
+  }, [fetchMails, box, q, page]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
-  useEffect(() => { setSelectedIds(new Set()); }, [status, q, page]);
+  useEffect(() => { void loadLabels(); }, [loadLabels]);
+  useEffect(() => { setSelectedIds(new Set()); }, [box, q, page]);
 
   useEffect(() => {
     const channel = supabase
@@ -262,11 +323,6 @@ export function MailInboxView() {
     return null;
   };
 
-  const statuses = useMemo(
-    () => ['', 'received', 'review_required', 'ready_auto', 'registered', 'rejected', 'failed'],
-    [],
-  );
-
   const pageIds = useMemo(() => mails.map(m => m.id), [mails]);
   const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
   const somePageSelected = pageIds.some(id => selectedIds.has(id));
@@ -288,6 +344,7 @@ export function MailInboxView() {
   };
 
   const toggleStar = async (id: number, currentlyStarred: boolean) => {
+    if (inTrash) return;
     const next = !currentlyStarred;
     // 낙관적 UI
     setMails(prev => {
@@ -316,7 +373,28 @@ export function MailInboxView() {
   const deleteSelected = async () => {
     const ids = [...selectedIds];
     if (!ids.length || deleteBusy) return;
-    if (!confirm(`선택한 메일 ${ids.length}건을 삭제하시겠습니까?\n목록에서 숨겨지며 복구는 관리자 DB 작업이 필요합니다.`)) {
+    if (inTrash) {
+      if (!confirm(`선택한 메일 ${ids.length}건을 받은/전체 메일함으로 복원할까요?\nGmail 휴지통에서도 함께 복원됩니다.`)) return;
+      setDeleteBusy(true);
+      const { error, count } = await restoreMails(ids);
+      setDeleteBusy(false);
+      if (error) {
+        alert('복원 실패: ' + (error.message || '오류가 발생했습니다.'));
+        return;
+      }
+      setSelectedIds(new Set());
+      if (count > 0 && mails.length === count && page > 1) {
+        setSearchParams(prev => {
+          const n = new URLSearchParams(prev);
+          n.set('page', String(page - 1));
+          return n;
+        });
+        return;
+      }
+      await load();
+      return;
+    }
+    if (!confirm(`선택한 메일 ${ids.length}건을 휴지통으로 이동할까요?\nGmail 휴지통과 함께 맞춰집니다.`)) {
       return;
     }
     setDeleteBusy(true);
@@ -338,8 +416,60 @@ export function MailInboxView() {
     await load();
   };
 
+  const hardDeleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length || deleteBusy || !inTrash) return;
+    if (!confirm(
+      `선택한 메일 ${ids.length}건을 완전 삭제할까요?\nGmail과 ERP에서 영구 삭제되며 되돌릴 수 없습니다.`,
+    )) return;
+    setDeleteBusy(true);
+    const { error, count } = await hardDeleteMails(ids);
+    setDeleteBusy(false);
+    if (error) {
+      alert('완전 삭제 실패: ' + (error.message || '오류가 발생했습니다.'));
+      return;
+    }
+    setSelectedIds(new Set());
+    if (count > 0 && mails.length === count && page > 1) {
+      setSearchParams(prev => {
+        const n = new URLSearchParams(prev);
+        n.set('page', String(page - 1));
+        return n;
+      });
+      return;
+    }
+    await load();
+  };
+
+  const NavBtn = ({
+    active,
+    onClick,
+    children,
+    indent = false,
+  }: {
+    active: boolean;
+    onClick: () => void;
+    children: ReactNode;
+    indent?: boolean;
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 rounded-lg text-left text-[13px] font-medium transition-colors ${
+        indent ? 'pl-7 pr-2 py-1.5' : 'px-2.5 py-2'
+      } ${
+        active
+          ? 'bg-indigo-600 text-white'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+      }`}
+    >
+      {children}
+    </button>
+  );
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 sm:space-y-6 relative">
+      {showGuide && <MailGuideModal open onClose={() => setShowGuide(false)} />}
       {showAiModal && (
         <AiConnectionModal
           initialUrl={apiBaseUrl}
@@ -358,8 +488,8 @@ export function MailInboxView() {
             <span className="truncate">AI 메일함</span>
           </h2>
           <p className="text-xs lg:text-sm text-slate-500 mt-1">
-            <span className="lg:hidden">Gmail 견적의뢰 · AI 분류/추출 · 견적 초안</span>
-            <span className="hidden lg:inline">Gmail 견적의뢰 수집 · AI 분류/추출 · 견적 초안 등록</span>
+            <span className="lg:hidden">{currentBoxLabel} · Gmail · AI 분류</span>
+            <span className="hidden lg:inline">{currentBoxLabel} · Gmail 수집 · AI 분류/추출 · 견적 초안</span>
           </p>
         </div>
         <div className="flex flex-col gap-2 w-full min-w-0 lg:w-auto lg:flex-row lg:flex-wrap lg:items-center lg:gap-3">
@@ -379,6 +509,13 @@ export function MailInboxView() {
             </span>
             <button
               type="button"
+              onClick={() => setShowGuide(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            >
+              <HelpCircle className="w-3.5 h-3.5" /> 가이드
+            </button>
+            <button
+              type="button"
               onClick={() => setShowAiModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
             >
@@ -388,11 +525,28 @@ export function MailInboxView() {
               type="button"
               disabled={selectedIds.size === 0 || deleteBusy}
               onClick={() => void deleteSelected()}
-              className="inline-flex items-center justify-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-[clamp(0.65rem,2.4vw,0.875rem)] font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              className={`inline-flex items-center justify-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-[clamp(0.65rem,2.4vw,0.875rem)] font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ${
+                inTrash ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'
+              }`}
             >
-              <Trash2 className="w-[1em] h-[1em] shrink-0" />
-              <span>메일삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
+              {inTrash ? <RotateCcw className="w-[1em] h-[1em] shrink-0" /> : <Trash2 className="w-[1em] h-[1em] shrink-0" />}
+              <span>
+                {inTrash
+                  ? `복원${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`
+                  : `휴지통${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+              </span>
             </button>
+            {inTrash && (
+              <button
+                type="button"
+                disabled={selectedIds.size === 0 || deleteBusy}
+                onClick={() => void hardDeleteSelected()}
+                className="inline-flex items-center justify-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl text-[clamp(0.65rem,2.4vw,0.875rem)] font-medium bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                <Trash2 className="w-[1em] h-[1em] shrink-0" />
+                <span>완전삭제{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { void load(); void refreshAiHealth(); }}
@@ -431,48 +585,105 @@ export function MailInboxView() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
-        <div className="flex gap-1.5 lg:gap-2 overflow-x-auto pb-0.5 -mx-0.5 px-0.5 lg:overflow-visible lg:pb-0 lg:mx-0 lg:px-0">
-          {statuses.map(s => (
-            <button
-              key={s || 'all'}
-              type="button"
-              onClick={() => setSearchParams(prev => {
-                const n = new URLSearchParams(prev);
-                if (s) n.set('status', s); else n.delete('status');
-                n.set('page', '1');
-                return n;
-              })}
-              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                status === s ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'
-              }`}
-            >
-              {s ? STATUS_LABEL[s as MailProcessStatus] : '전체'}
-            </button>
-          ))}
-        </div>
-        <div className="w-full min-w-0 lg:ml-auto lg:w-auto">
-          <input
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 lg:w-56"
-            placeholder="제목/발신자 검색"
-            defaultValue={q}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                const v = (e.target as HTMLInputElement).value.trim();
-                setSearchParams(prev => {
-                  const n = new URLSearchParams(prev);
-                  if (v) n.set('q', v); else n.delete('q');
-                  n.set('page', '1');
-                  return n;
-                });
-              }
-            }}
-          />
-        </div>
+      {/* 모바일: 메일함 선택 */}
+      <div className="lg:hidden">
+        <label className="sr-only" htmlFor="mail-box-select">메일함</label>
+        <select
+          id="mail-box-select"
+          className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
+          value={box}
+          onChange={e => setBox(e.target.value as MailBoxId)}
+        >
+          <optgroup label="메일함">
+            {BOX_MAIN.map(b => (
+              <option key={b.id} value={b.id}>{b.label}</option>
+            ))}
+          </optgroup>
+          <optgroup label="상태">
+            {BOX_STATUS.map(b => (
+              <option key={b.id} value={b.id}>{b.label}</option>
+            ))}
+          </optgroup>
+          {gmailLabels.length > 0 && (
+            <optgroup label="Label">
+              {gmailLabels.map(l => (
+                <option key={l.id} value={`label:${l.id}`}>{l.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
       </div>
 
-      {/* 모바일·태블릿: 카드 리스트 / 데스크톱(lg+): 테이블 */}
-      <div className="lg:hidden space-y-2">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 min-w-0 items-start">
+        {/* 데스크톱 left 메뉴 */}
+        <aside className="hidden lg:block w-52 shrink-0 sticky top-4 self-start">
+          <nav className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm space-y-3">
+            <div>
+              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">메일함</p>
+              <div className="space-y-0.5">
+                {BOX_MAIN.map(b => (
+                  <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)}>
+                    <span className={box === b.id ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon)}</span>
+                    <span className="truncate">{b.label}</span>
+                  </NavBtn>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</p>
+              <div className="space-y-0.5">
+                {BOX_STATUS.map(b => (
+                  <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
+                    <span className="truncate">{b.label}</span>
+                  </NavBtn>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Label</p>
+              {gmailLabels.length === 0 ? (
+                <p className="px-2.5 py-1.5 text-[11px] text-slate-400 leading-snug">
+                  Gmail 사용자 라벨 없음 (동기화 후 표시)
+                </p>
+              ) : (
+                <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                  {gmailLabels.map(l => {
+                    const id = `label:${l.id}` as MailBoxId;
+                    return (
+                      <NavBtn key={l.id} active={box === id} onClick={() => setBox(id)} indent>
+                        <span className="truncate">{l.name}</span>
+                      </NavBtn>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </nav>
+        </aside>
+
+        <div className="min-w-0 flex-1 w-full space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-slate-800 truncate">{currentBoxLabel}
+              <span className="ml-2 text-xs font-normal text-slate-400 tabular-nums">{totalItems}건</span>
+            </p>
+            <input
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 sm:w-56"
+              placeholder="제목/발신자 검색"
+              defaultValue={q}
+              key={q}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const v = (e.target as HTMLInputElement).value.trim();
+                  setSearchParams(prev => {
+                    const n = new URLSearchParams(prev);
+                    if (v) n.set('q', v); else n.delete('q');
+                    n.set('page', '1');
+                    return n;
+                  });
+                }
+              }}
+            />
+          </div>
         <div className="flex items-center gap-2 px-1">
           <MailSelectCheckbox
             checked={allPageSelected}
@@ -551,11 +762,6 @@ export function MailInboxView() {
                     <span className="tabular-nums whitespace-nowrap">{formatReceivedAtKst(m.received_at)}</span>
                     {conf && <span className="tabular-nums">신뢰도 {conf}</span>}
                   </div>
-                  {m.status_reason && (
-                    <p className="mt-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 break-words">
-                      {m.status_reason}
-                    </p>
-                  )}
                 </button>
               </div>
             </div>
@@ -650,16 +856,9 @@ export function MailInboxView() {
                     {formatReceivedAtKst(m.received_at)}
                   </td>
                   <td className="px-2 py-1.5 align-middle">
-                    <div className="min-w-0">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
-                        {STATUS_LABEL[m.process_status]}
-                      </span>
-                      {m.status_reason && (
-                        <p className="mt-1 text-[11px] text-amber-700 leading-snug line-clamp-2" title={m.status_reason}>
-                          {m.status_reason}
-                        </p>
-                      )}
-                    </div>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_TONE[m.process_status]}`}>
+                      {STATUS_LABEL[m.process_status]}
+                    </span>
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-middle">
                     {m.extraction?.overall_confidence != null
@@ -686,6 +885,8 @@ export function MailInboxView() {
         totalItems={totalItems}
         pageSize={PAGE_SIZE}
       />
+        </div>
+      </div>
     </motion.div>
   );
 }

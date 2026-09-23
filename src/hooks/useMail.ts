@@ -3,12 +3,27 @@ import { supabase } from '@/lib/supabase';
 import { aiDocClient } from '@/lib/aiDocClient';
 import { decideProcessStatus, extractionToMaterialLines, matchPartners } from '@/lib/mailMatching';
 import { displayMailBody } from '@/lib/mailBody';
-import type { MailAttachment, MailMessage, CanonicalExtraction } from '@/types/aiMail';
+import { mirrorToGmail } from '@/lib/gmailMirror';
+import type { MailAttachment, MailBoxId, MailMessage, CanonicalExtraction } from '@/types/aiMail';
 import type { Partner, MaterialLine } from '@/types';
 import { today } from '@/types';
 
+const PROCESS_STATUSES = new Set([
+  'received',
+  'classifying',
+  'extracting',
+  'review_required',
+  'ready_auto',
+  'registered',
+  'rejected',
+  'failed',
+]);
+
 export function useMail() {
   const fetchMails = useCallback(async (filters?: {
+    /** left 메일함. status 계열이면 process_status 필터 */
+    box?: MailBoxId | string;
+    /** @deprecated box 사용 권장 — 하위호환 */
     status?: string;
     q?: string;
     page?: number;
@@ -19,17 +34,39 @@ export function useMail() {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
+    const box = (filters?.box || filters?.status || 'all') as string;
+    const inTrash = box === 'trash';
+
     let query = supabase
       .from('mail_messages')
-      .select('*', { count: 'exact' })
-      .is('deleted_at', null)
+      .select('*', { count: 'exact' });
+
+    if (inTrash) {
+      query = query.not('deleted_at', 'is', null);
+    } else {
+      query = query.is('deleted_at', null);
+    }
+
+    if (box === 'starred') {
+      query = query.eq('is_starred', true);
+    } else if (box === 'inbox') {
+      query = query.eq('is_sent', false);
+    } else if (box === 'sent') {
+      query = query.eq('is_sent', true);
+    } else if (box.startsWith('label:')) {
+      const labelId = box.slice('label:'.length);
+      if (labelId) query = query.contains('gmail_label_ids', [labelId]);
+    } else if (box !== 'all' && box !== 'trash' && PROCESS_STATUSES.has(box)) {
+      query = query.eq('process_status', box);
+    }
+
+    query = query
       // 즐겨찾기 최상단, 최근 별표가 더 위, 그다음 수신시각
       .order('is_starred', { ascending: false })
       .order('starred_at', { ascending: false, nullsFirst: false })
       .order('received_at', { ascending: false })
       .range(from, to);
 
-    if (filters?.status) query = query.eq('process_status', filters.status);
     if (filters?.q) {
       query = query.or(`subject.ilike.%${filters.q}%,from_addr.ilike.%${filters.q}%,snippet.ilike.%${filters.q}%`);
     }
@@ -91,21 +128,46 @@ export function useMail() {
     return { data: data as MailMessage | null, error };
   }, []);
 
-  /** 메일함 soft-delete (deleted_at) */
+  /** 메일함 soft-delete → Gmail 휴지통 미러 */
   const softDeleteMails = useCallback(async (ids: number[]) => {
     const unique = [...new Set(ids.filter(id => Number.isFinite(id) && id > 0))];
     if (!unique.length) {
       return { error: { message: '삭제할 메일을 선택하세요.' } as { message: string }, count: 0 };
     }
-    const now = new Date().toISOString();
-    const { data, error } = await supabase
-      .from('mail_messages')
-      .update({ deleted_at: now, updated_at: now })
-      .in('id', unique)
-      .is('deleted_at', null)
-      .select('id');
-    if (error) return { error, count: 0 };
-    return { error: null, count: data?.length ?? 0 };
+    const { ok, okCount, error: mirrorErr } = await mirrorToGmail({ action: 'trash', mailIds: unique });
+    if (!ok && okCount === 0) {
+      return { error: { message: mirrorErr || 'Gmail 휴지통 이동 실패' }, count: 0 };
+    }
+    return { error: null, count: okCount };
+  }, []);
+
+  /** 휴지통 → 복원 (Gmail untrash) */
+  const restoreMails = useCallback(async (ids: number[]) => {
+    const unique = [...new Set(ids.filter(id => Number.isFinite(id) && id > 0))];
+    if (!unique.length) {
+      return { error: { message: '복원할 메일을 선택하세요.' } as { message: string }, count: 0 };
+    }
+    const { ok, okCount, error: mirrorErr } = await mirrorToGmail({ action: 'untrash', mailIds: unique });
+    if (!ok && okCount === 0) {
+      return { error: { message: mirrorErr || 'Gmail 복원 실패' }, count: 0 };
+    }
+    return { error: null, count: okCount };
+  }, []);
+
+  /** 휴지통에서 완전 삭제 (Gmail + DB) */
+  const hardDeleteMails = useCallback(async (ids: number[]) => {
+    const unique = [...new Set(ids.filter(id => Number.isFinite(id) && id > 0))];
+    if (!unique.length) {
+      return { error: { message: '완전 삭제할 메일을 선택하세요.' } as { message: string }, count: 0 };
+    }
+    const { ok, okCount, error: mirrorErr } = await mirrorToGmail({
+      action: 'delete_forever',
+      mailIds: unique,
+    });
+    if (!ok && okCount === 0) {
+      return { error: { message: mirrorErr || '완전 삭제 실패' }, count: 0 };
+    }
+    return { error: null, count: okCount };
   }, []);
 
   /** Gmail Push / 수동 수집으로 들어온 메일 저장 (idempotent by gmail_message_id) */
@@ -468,20 +530,50 @@ export function useMail() {
     };
   }, []);
 
-  /** 즐겨찾기 토글 — 별표 시 starred_at=now (최근 별표가 목록 최상단) */
+  /** 즐겨찾기 토글 — Gmail STARRED 미러 */
   const setMailStarred = useCallback(async (id: number, starred: boolean) => {
+    const { ok, error: mirrorErr } = await mirrorToGmail({
+      action: starred ? 'star' : 'unstar',
+      mailIds: [id],
+    });
+    if (!ok) {
+      return { data: null, error: { message: mirrorErr || '별표 동기화 실패' } };
+    }
     const { data, error } = await supabase
       .from('mail_messages')
-      .update({
-        is_starred: starred,
-        starred_at: starred ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      })
+      .select('*')
       .eq('id', id)
-      .is('deleted_at', null)
-      .select()
       .maybeSingle();
     return { data: data as MailMessage | null, error };
+  }, []);
+
+  /** 사용자 라벨 add/remove → Gmail 미러 */
+  const modifyMailLabels = useCallback(async (
+    ids: number[],
+    addLabelIds: string[],
+    removeLabelIds: string[],
+  ) => {
+    const unique = [...new Set(ids.filter(id => Number.isFinite(id) && id > 0))];
+    if (!unique.length) return { error: { message: '메일을 선택하세요.' }, count: 0 };
+    const { ok, okCount, error: mirrorErr } = await mirrorToGmail({
+      action: 'modify_labels',
+      mailIds: unique,
+      addLabelIds,
+      removeLabelIds,
+    });
+    if (!ok && okCount === 0) {
+      return { error: { message: mirrorErr || '라벨 변경 실패' }, count: 0 };
+    }
+    return { error: null, count: okCount };
+  }, []);
+
+  const fetchGmailLabels = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('gmail_labels')
+      .select('id, mailbox, name, label_type, message_list_visibility, updated_at')
+      .eq('label_type', 'user')
+      .order('name');
+    return { data: (data ?? []) as import('@/types/aiMail').GmailLabelRow[], error };
   }, []);
 
   return {
@@ -491,7 +583,11 @@ export function useMail() {
     fetchAttachments,
     markMailRead,
     softDeleteMails,
+    restoreMails,
+    hardDeleteMails,
     setMailStarred,
+    modifyMailLabels,
+    fetchGmailLabels,
     upsertMail,
     runAiPipeline,
     saveExtraction,
