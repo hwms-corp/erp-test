@@ -614,42 +614,102 @@ export function MailInboxView() {
         </div>
       </div>
 
-      {/* 모바일: 메일함 선택 + 작성 */}
-      <div className="lg:hidden flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setShowCompose(true)}
-          className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700"
-          aria-label="새 메일 작성"
-          title="새 메일 작성"
+      {/* 모바일·태블릿: 가로 탭형 메일함 메뉴 */}
+      <div className="lg:hidden space-y-2 min-w-0">
+        <div className="flex items-stretch gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setShowCompose(true)}
+            className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm"
+            aria-label="새 메일 작성"
+            title="새 메일 작성"
+          >
+            <MailPlus className="w-5 h-5" />
+          </button>
+          <div
+            className="flex-1 min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+            aria-label="메일함"
+          >
+            <div className="flex w-max items-center gap-1.5 pr-1">
+              {BOX_MAIN.map(b => {
+                const active = box === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setBox(b.id)}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    <span className={active ? 'text-white' : 'text-slate-400'}>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
+                    {b.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="상태 · 라벨"
         >
-          <MailPlus className="w-5 h-5" />
-        </button>
-        <label className="sr-only" htmlFor="mail-box-select">메일함</label>
-        <select
-          id="mail-box-select"
-          className="flex-1 min-w-0 px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white"
-          value={box}
-          onChange={e => setBox(e.target.value as MailBoxId)}
-        >
-          <optgroup label="메일함">
-            {BOX_MAIN.map(b => (
-              <option key={b.id} value={b.id}>{b.label}</option>
-            ))}
-          </optgroup>
-          <optgroup label="상태">
-            {BOX_STATUS.map(b => (
-              <option key={b.id} value={b.id}>{b.label}</option>
-            ))}
-          </optgroup>
-          {gmailLabels.length > 0 && (
-            <optgroup label="Label">
-              {gmailLabels.map(l => (
-                <option key={l.id} value={`label:${l.id}`}>{l.name}</option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          <div className="flex w-max items-center gap-1.5 pb-0.5">
+            <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">상태</span>
+            {BOX_STATUS.map(b => {
+              const active = box === b.id;
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setBox(b.id)}
+                  className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                    active
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+            {gmailLabels.length > 0 && (
+              <>
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
+                <span className="shrink-0 px-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Label</span>
+                {gmailLabels.map(l => {
+                  const id = `label:${l.id}` as MailBoxId;
+                  const active = box === id;
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setBox(id)}
+                      className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                        active
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100'
+                      }`}
+                    >
+                      {l.name}
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 min-w-0 items-start">
