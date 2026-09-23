@@ -47,12 +47,20 @@ export function useMail() {
       query = query.is('deleted_at', null);
     }
 
-    if (box === 'starred') {
+    if (box === 'latest') {
+      // 받은메일 중 즐겨찾기 없음 — 안읽음 우선, 그다음 최신순
+      query = query.eq('is_sent', false).eq('is_starred', false);
+    } else if (box === 'starred') {
       query = query.eq('is_starred', true);
     } else if (box === 'inbox') {
       query = query.eq('is_sent', false);
     } else if (box === 'sent') {
       query = query.eq('is_sent', true);
+    } else if (box === 'read') {
+      query = query.eq('is_sent', false).eq('is_read', true);
+    } else if (box === 'unread') {
+      // null도 안읽음 취급이지만 현재 DB는 false만 사용
+      query = query.eq('is_sent', false).eq('is_read', false);
     } else if (box.startsWith('label:')) {
       const labelId = box.slice('label:'.length);
       if (labelId) query = query.contains('gmail_label_ids', [labelId]);
@@ -60,12 +68,18 @@ export function useMail() {
       query = query.eq('process_status', box);
     }
 
-    query = query
-      // 즐겨찾기 최상단, 최근 별표가 더 위, 그다음 수신시각
-      .order('is_starred', { ascending: false })
-      .order('starred_at', { ascending: false, nullsFirst: false })
-      .order('received_at', { ascending: false })
-      .range(from, to);
+    if (box === 'latest' || box === 'unread' || box === 'read') {
+      query = query
+        .order('is_read', { ascending: true, nullsFirst: true })
+        .order('received_at', { ascending: false });
+    } else {
+      query = query
+        // 즐겨찾기 최상단, 최근 별표가 더 위, 그다음 수신시각
+        .order('is_starred', { ascending: false })
+        .order('starred_at', { ascending: false, nullsFirst: false })
+        .order('received_at', { ascending: false });
+    }
+    query = query.range(from, to);
 
     if (filters?.q) {
       query = query.or(`subject.ilike.%${filters.q}%,from_addr.ilike.%${filters.q}%,snippet.ilike.%${filters.q}%`);

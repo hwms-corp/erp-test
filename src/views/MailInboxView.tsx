@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
@@ -79,6 +79,7 @@ const STATUS_TONE: Record<MailProcessStatus, string> = {
 };
 
 const PAGE_SIZE = 20;
+const LATEST_PAGE_SIZE = 30;
 
 const AI_STATUS_LABEL: Record<AiHealthStatus, string> = {
   checking: '확인 중…',
@@ -96,10 +97,13 @@ const AI_STATUS_TONE: Record<AiHealthStatus, string> = {
   unconfigured: 'bg-slate-100 text-slate-600 border-slate-200',
 };
 
-const BOX_MAIN: { id: MailBoxId; label: string; icon: 'inbox' | 'all' | 'sent' | 'star' | 'trash' }[] = [
+const BOX_MAIN: { id: MailBoxId; label: string; icon: 'latest' | 'inbox' | 'all' | 'sent' | 'read' | 'unread' | 'star' | 'trash' }[] = [
+  { id: 'latest', label: '최신메일함', icon: 'latest' },
   { id: 'all', label: '전체메일함', icon: 'all' },
   { id: 'inbox', label: '받은메일함', icon: 'inbox' },
   { id: 'sent', label: '보낸메일함', icon: 'sent' },
+  { id: 'read', label: '읽은메일함', icon: 'read' },
+  { id: 'unread', label: '안읽은메일함', icon: 'unread' },
   { id: 'starred', label: '즐겨찾기', icon: 'star' },
   { id: 'trash', label: '휴지통', icon: 'trash' },
 ];
@@ -116,7 +120,10 @@ const BOX_STATUS: { id: MailProcessStatus; label: string }[] = [
 ];
 
 function boxIcon(kind: (typeof BOX_MAIN)[number]['icon'], className = 'w-4 h-4') {
+  if (kind === 'latest') return <Clock className={className} />;
   if (kind === 'sent') return <Send className={className} />;
+  if (kind === 'read') return <MailOpen className={className} />;
+  if (kind === 'unread') return <Mail className={className} />;
   if (kind === 'star') return <Star className={className} />;
   if (kind === 'trash') return <Trash2 className={className} />;
   if (kind === 'all') return <FolderOpen className={className} />;
@@ -146,13 +153,14 @@ export function MailInboxView() {
   const navigate = useNavigate();
 
   const isAdmin = user?.role === 'admin';
-  /** URL: box 우선, 구 status= 호환 */
-  const boxParam = searchParams.get('box') || searchParams.get('status') || 'inbox';
+  /** URL: box 우선, 구 status= 호환 — 기본은 최신메일함 */
+  const boxParam = searchParams.get('box') || searchParams.get('status') || 'latest';
   const box = boxParam as MailBoxId;
   const inTrash = box === 'trash';
   const q = searchParams.get('q') || '';
   const page = Math.max(1, Number(searchParams.get('page') || '1') || 1);
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const pageSize = box === 'latest' ? LATEST_PAGE_SIZE : PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
 
   const setBox = useCallback((next: MailBoxId) => {
     setSearchParams(prev => {
@@ -210,7 +218,7 @@ export function MailInboxView() {
       box,
       q: q || undefined,
       page,
-      pageSize: PAGE_SIZE,
+      pageSize,
     });
     setMails(data ?? []);
     setTotalItems(count ?? 0);
@@ -221,7 +229,7 @@ export function MailInboxView() {
       return next;
     });
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, box, q, page]);
+  }, [fetchMails, box, q, page, pageSize]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
@@ -350,11 +358,23 @@ export function MailInboxView() {
     const next = !currentlyStarred;
     // 낙관적 UI
     setMails(prev => {
+      // 최신메일함: 별표 시 목록에서 제외 / 즐겨찾기: 별표 해제 시 제외
+      if (box === 'latest' && next) return prev.filter(m => m.id !== id);
+      if (box === 'starred' && !next) return prev.filter(m => m.id !== id);
+
       const updated = prev.map(m =>
         m.id === id
           ? { ...m, is_starred: next, starred_at: next ? new Date().toISOString() : null }
           : m,
       );
+      if (box === 'latest' || box === 'read' || box === 'unread') {
+        return [...updated].sort((a, b) => {
+          const ar = a.is_read === true ? 1 : 0;
+          const br = b.is_read === true ? 1 : 0;
+          if (ar !== br) return ar - br;
+          return new Date(b.received_at).getTime() - new Date(a.received_at).getTime();
+        });
+      }
       return [...updated].sort((a, b) => {
         const as = a.is_starred ? 1 : 0;
         const bs = b.is_starred ? 1 : 0;
@@ -917,7 +937,7 @@ export function MailInboxView() {
           return n;
         })}
         totalItems={totalItems}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
       />
         </div>
       </div>

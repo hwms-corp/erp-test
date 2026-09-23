@@ -177,9 +177,12 @@ export interface MailMessage {
 
 /** 리스트 left 메일함 폴더 */
 export type MailBoxId =
+  | 'latest'
   | 'all'
   | 'inbox'
   | 'sent'
+  | 'read'
+  | 'unread'
   | 'starred'
   | 'trash'
   | MailProcessStatus
