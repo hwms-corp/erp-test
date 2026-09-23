@@ -1,4 +1,23 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 @import "tailwindcss";
+
+/* 전체메일함 받음/보냄 배지 */
+.mail-dir-badge {
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.mail-dir-badge--fill {
+  font-size: 0.75rem; /* 12px */
+  gap: 0.3rem;
+}
+
+.mail-dir-badge--chip {
+  font-size: 0.6875rem; /* 11px */
+  gap: 0.2rem;
+}
 
 @keyframes mail-row-arrive {
   0% {
