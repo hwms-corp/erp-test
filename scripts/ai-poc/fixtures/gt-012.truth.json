@@ -1,0 +1,275 @@
+{
+  "document_type": "quotation_request",
+  "language": "mixed",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "Hyundai Heavy",
+      "original_key": "거래처",
+      "original_value": "Hyundai Heavy",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "Hyundai Heavy",
+      "language": "mixed"
+    },
+    "contact_name": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "mixed"
+    },
+    "email": {
+      "value": "purchase@hhi.example",
+      "original_key": "email",
+      "original_value": "purchase@hhi.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "purchase@hhi.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-12",
+      "original_key": "request_date",
+      "original_value": "2026-09-12",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-12",
+      "language": "mixed"
+    },
+    "delivery_date": {
+      "value": "2026-10-12",
+      "original_key": "납기",
+      "original_value": "2026-10-12",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-12",
+      "language": "mixed"
+    },
+    "currency": {
+      "value": "KRW",
+      "original_key": "currency",
+      "original_value": "KRW",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "KRW",
+      "language": "mixed"
+    },
+    "vessel": {
+      "value": "MV TEST-11",
+      "original_key": "선명",
+      "original_value": "MV TEST-11",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-11",
+      "language": "mixed"
+    },
+    "contact_person": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "mixed"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "Gasket",
+        "original_key": "품명",
+        "original_value": "Gasket",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Gasket",
+        "language": "mixed"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "ASME B16.20",
+        "original_key": "사양",
+        "original_value": "ASME B16.20",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "ASME B16.20",
+        "language": "mixed"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "수량",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "mixed"
+      },
+      "unit": {
+        "value": "SET",
+        "original_key": "unit",
+        "original_value": "SET",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "SET",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "Bearing",
+        "original_key": "품명",
+        "original_value": "Bearing",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Bearing",
+        "language": "mixed"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "6205-2RS",
+        "original_key": "사양",
+        "original_value": "6205-2RS",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6205-2RS",
+        "language": "mixed"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "수량",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "mixed"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": "긴급 요청",
+    "original_key": "비고",
+    "original_value": "긴급 요청",
+    "confidence": 0.9,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": "긴급 요청",
+    "language": "mixed"
+  }
+}

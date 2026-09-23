@@ -1,0 +1,10 @@
+Subject: RFQ #1017
+From: Samsung Heavy <buyer@shi.example>
+Dear Sir,
+Please quote the following items.
+Company: Samsung Heavy
+Required Date: 2026-10-18
+Vessel: MV TEST-17
+1. Item: Bearing / Spec: 6205-2RS / Qty: 2 EA
+2. Item: Hose / Spec: 1-1/2 inch / Qty: 4 M
+Best regards

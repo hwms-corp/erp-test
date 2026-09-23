@@ -60,12 +60,22 @@ export async function mirrorToGmail(opts: {
   };
 }
 
+export type SendAttachment = {
+  filename: string;
+  mime_type: string;
+  content_base64: string;
+};
+
 /** Gmail 새 메일 발송 */
 export async function sendGmailMessage(opts: {
   to: string;
   cc?: string;
   subject: string;
   body: string;
+  threadId?: string;
+  inReplyTo?: string;
+  references?: string;
+  attachments?: SendAttachment[];
 }): Promise<{ ok: boolean; gmailMessageId?: string | null; error?: string }> {
   if (!supabaseUrl) throw new Error('Supabase URL 없음');
   const headers = await authHeader();
@@ -78,6 +88,10 @@ export async function sendGmailMessage(opts: {
       cc: opts.cc,
       subject: opts.subject,
       body: opts.body,
+      threadId: opts.threadId,
+      inReplyTo: opts.inReplyTo,
+      references: opts.references,
+      attachments: opts.attachments,
     }),
   });
   const json = await res.json().catch(() => ({}));

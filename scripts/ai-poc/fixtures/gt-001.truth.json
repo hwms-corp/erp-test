@@ -1,0 +1,347 @@
+{
+  "document_type": "quotation_request",
+  "language": "ko",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "한진해운",
+      "original_key": "거래처",
+      "original_value": "한진해운",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "한진해운",
+      "language": "ko"
+    },
+    "contact_name": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "ko"
+    },
+    "email": {
+      "value": "rfq@hanjin.example",
+      "original_key": "email",
+      "original_value": "rfq@hanjin.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "rfq@hanjin.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-01",
+      "original_key": "request_date",
+      "original_value": "2026-09-01",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-01",
+      "language": "ko"
+    },
+    "delivery_date": {
+      "value": "2026-10-01",
+      "original_key": "납기",
+      "original_value": "2026-10-01",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-01",
+      "language": "ko"
+    },
+    "currency": {
+      "value": "KRW",
+      "original_key": "currency",
+      "original_value": "KRW",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "KRW",
+      "language": "ko"
+    },
+    "vessel": {
+      "value": "MV TEST-0",
+      "original_key": "선명",
+      "original_value": "MV TEST-0",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-0",
+      "language": "ko"
+    },
+    "contact_person": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "ko"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "밸브",
+        "original_key": "품명",
+        "original_value": "밸브",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "밸브",
+        "language": "ko"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "DN50 PN16",
+        "original_key": "사양",
+        "original_value": "DN50 PN16",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "DN50 PN16",
+        "language": "ko"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "수량",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "ko"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "가스켓",
+        "original_key": "품명",
+        "original_value": "가스켓",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "가스켓",
+        "language": "ko"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "ASME B16.20",
+        "original_key": "사양",
+        "original_value": "ASME B16.20",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "ASME B16.20",
+        "language": "ko"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "수량",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "ko"
+      },
+      "unit": {
+        "value": "SET",
+        "original_key": "unit",
+        "original_value": "SET",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "SET",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "베어링",
+        "original_key": "품명",
+        "original_value": "베어링",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "베어링",
+        "language": "ko"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "6205-2RS",
+        "original_key": "사양",
+        "original_value": "6205-2RS",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6205-2RS",
+        "language": "ko"
+      },
+      "quantity": {
+        "value": 6,
+        "original_key": "수량",
+        "original_value": "6",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6",
+        "language": "ko"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": "긴급 요청",
+    "original_key": "비고",
+    "original_value": "긴급 요청",
+    "confidence": 0.9,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": "긴급 요청",
+    "language": "ko"
+  }
+}

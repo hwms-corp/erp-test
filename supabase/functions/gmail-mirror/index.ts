@@ -132,32 +132,89 @@ function buildMimeMessage(opts: {
   subject: string;
   body: string;
   from?: string;
+  inReplyTo?: string;
+  references?: string;
+  attachments?: { filename: string; mime_type: string; content_base64: string }[];
 }): string {
-  const lines: string[] = [];
-  if (opts.from) lines.push(`From: ${opts.from}`);
-  lines.push(`To: ${opts.to}`);
-  if (opts.cc?.trim()) lines.push(`Cc: ${opts.cc.trim()}`);
-  lines.push(`Subject: ${encodeRfc2047(opts.subject || '(제목 없음)')}`);
-  lines.push('MIME-Version: 1.0');
-  lines.push('Content-Type: text/plain; charset="UTF-8"');
-  lines.push('Content-Transfer-Encoding: 8bit');
-  lines.push('');
-  lines.push(opts.body || '');
-  return lines.join('\r\n');
+  const headers: string[] = [];
+  if (opts.from) headers.push(`From: ${opts.from}`);
+  headers.push(`To: ${opts.to}`);
+  if (opts.cc?.trim()) headers.push(`Cc: ${opts.cc.trim()}`);
+  headers.push(`Subject: ${encodeRfc2047(opts.subject || '(제목 없음)')}`);
+  if (opts.inReplyTo?.trim()) headers.push(`In-Reply-To: ${opts.inReplyTo.trim()}`);
+  if (opts.references?.trim()) headers.push(`References: ${opts.references.trim()}`);
+  headers.push('MIME-Version: 1.0');
+
+  const atts = opts.attachments?.filter(a => a.content_base64 && a.filename) || [];
+  if (!atts.length) {
+    headers.push('Content-Type: text/plain; charset="UTF-8"');
+    headers.push('Content-Transfer-Encoding: 8bit');
+    headers.push('');
+    headers.push(opts.body || '');
+    return headers.join('\r\n');
+  }
+
+  const boundary = `mixed_${crypto.randomUUID().replace(/-/g, '')}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+  headers.push(`--${boundary}`);
+  headers.push('Content-Type: text/plain; charset="UTF-8"');
+  headers.push('Content-Transfer-Encoding: 8bit');
+  headers.push('');
+  headers.push(opts.body || '');
+
+  for (const a of atts) {
+    const mime = (a.mime_type || 'application/octet-stream').replace(/[\r\n]/g, '');
+    const fname = a.filename.replace(/"/g, '');
+    const b64 = a.content_base64.replace(/\s+/g, '');
+    // 76자 줄바꿈
+    const wrapped = b64.replace(/.{1,76}/g, m => `${m}\r\n`).trimEnd();
+    headers.push(`--${boundary}`);
+    headers.push(`Content-Type: ${mime}; name="${fname}"`);
+    headers.push('Content-Transfer-Encoding: base64');
+    headers.push(`Content-Disposition: attachment; filename="${fname}"`);
+    headers.push('');
+    headers.push(wrapped);
+  }
+  headers.push(`--${boundary}--`);
+  headers.push('');
+  return headers.join('\r\n');
 }
 
 async function gmailSend(
   accessToken: string,
-  opts: { to: string; cc?: string; subject: string; body: string },
+  opts: {
+    to: string;
+    cc?: string;
+    subject: string;
+    body: string;
+    threadId?: string;
+    inReplyTo?: string;
+    references?: string;
+    attachments?: { filename: string; mime_type: string; content_base64: string }[];
+  },
 ) {
-  const raw = toBase64Url(buildMimeMessage(opts));
+  const raw = toBase64Url(
+    buildMimeMessage({
+      to: opts.to,
+      cc: opts.cc,
+      subject: opts.subject,
+      body: opts.body,
+      inReplyTo: opts.inReplyTo,
+      references: opts.references,
+      attachments: opts.attachments,
+    }),
+  );
+  const payload: { raw: string; threadId?: string } = { raw };
+  if (opts.threadId?.trim()) payload.threadId = opts.threadId.trim();
+
   const res = await fetch(`${GMAIL_API}/users/${gmailUser()}/messages/send`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${accessToken}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ raw }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -206,6 +263,10 @@ Deno.serve(async (req) => {
       cc?: string;
       subject?: string;
       body?: string;
+      threadId?: string;
+      inReplyTo?: string;
+      references?: string;
+      attachments?: { filename: string; mime_type: string; content_base64: string }[];
     };
 
     const action = body.action;
@@ -222,8 +283,11 @@ Deno.serve(async (req) => {
         cc: body.cc,
         subject: body.subject || '',
         body: body.body || '',
+        threadId: body.threadId,
+        inReplyTo: body.inReplyTo,
+        references: body.references,
+        attachments: body.attachments,
       });
-      // watch/history 가 SENT 를 곧 가져옴. 여기서는 id 만 반환
       return json({
         ok: true,
         action: 'send',

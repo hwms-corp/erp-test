@@ -1,0 +1,11 @@
+Subject: RFQ #1021
+From: Hyundai Heavy <purchase@hhi.example>
+Dear Sir,
+Please quote the following items.
+Company: Hyundai Heavy
+Required Date: 2026-10-22
+Vessel: MV TEST-21
+1. Item: Gasket / Spec: ASME B16.20 / Qty: 2 SET
+2. Item: Bearing / Spec: 6205-2RS / Qty: 4 EA
+3. Item: Hose / Spec: 1-1/2 inch / Qty: 6 M
+Best regards

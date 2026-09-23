@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +21,7 @@ const TOAST_CARD_H = 84;
 const TOAST_GAP = 8;
 const POLL_MS = 12_000;
 const LS_KEY = 'erp_mail_toast_enabled';
+const LS_POS = 'erp_mail_toast_fab_pos';
 
 export type MailToast = {
   key: string;
@@ -55,12 +57,52 @@ function readEnabled(): boolean {
   }
 }
 
+function readPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(LS_POS);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { x?: number; y?: number };
+    if (typeof p.x === 'number' && typeof p.y === 'number') return { x: p.x, y: p.y };
+  } catch { /* ignore */ }
+  return null;
+}
+
+function clampPos(x: number, y: number) {
+  const size = 48;
+  const maxX = Math.max(8, window.innerWidth - size - 8);
+  const maxY = Math.max(8, window.innerHeight - size - 8);
+  return {
+    x: Math.min(maxX, Math.max(8, x)),
+    y: Math.min(maxY, Math.max(8, y)),
+  };
+}
+
 function MailToastStack() {
   const { toasts, enabled, toggleEnabled, dismissToast, dismissAllToasts } = useMailToasts();
   const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [flash, setFlash] = useState<'on' | 'off' | null>(null);
+  const [pos, setPos] = useState(() => {
+    const saved = readPos();
+    if (saved) return saved;
+    if (typeof window === 'undefined') return { x: 24, y: 24 };
+    return { x: window.innerWidth - 72, y: window.innerHeight - 72 };
+  });
+  const dragRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    ox: number;
+    oy: number;
+    sx: number;
+    sy: number;
+  } | null>(null);
   const toastMaxH = TOAST_VISIBLE * TOAST_CARD_H + (TOAST_VISIBLE - 1) * TOAST_GAP;
+
+  useEffect(() => {
+    const onResize = () => setPos(p => clampPos(p.x, p.y));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -77,8 +119,60 @@ function MailToastStack() {
     window.setTimeout(() => setFlash(null), 1400);
   };
 
+  const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      active: true,
+      moved: false,
+      ox: e.clientX,
+      oy: e.clientY,
+      sx: pos.x,
+      sy: pos.y,
+    };
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const d = dragRef.current;
+    if (!d?.active) return;
+    const dx = e.clientX - d.ox;
+    const dy = e.clientY - d.oy;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) d.moved = true;
+    if (!d.moved) return;
+    setPos(clampPos(d.sx + dx, d.sy + dy));
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch { /* ignore */ }
+    if (!d) return;
+    if (d.moved) {
+      setPos(p => {
+        const next = clampPos(p.x, p.y);
+        try {
+          localStorage.setItem(LS_POS, JSON.stringify(next));
+        } catch { /* ignore */ }
+        return next;
+      });
+      return;
+    }
+    onToggle();
+  };
+
+  // 토스트 스택은 FAB 위에 붙이되, 화면 밖으로 안 나가게
+  const stackWidth = Math.min(352, typeof window !== 'undefined' ? window.innerWidth - 16 : 352);
+  const stackLeft = Math.min(
+    Math.max(8, pos.x + 48 - stackWidth),
+    typeof window !== 'undefined' ? window.innerWidth - stackWidth - 8 : pos.x,
+  );
+  const stackBottom = typeof window !== 'undefined'
+    ? Math.max(8, window.innerHeight - pos.y + 8)
+    : 72;
+
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-[60] flex flex-col items-end gap-2 w-[22rem] max-w-[calc(100vw-2rem)]">
+    <>
       <AnimatePresence>
         {flash && (
           <motion.div
@@ -86,11 +180,10 @@ function MailToastStack() {
             initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6 }}
-            className={`pointer-events-none rounded-full px-3 py-1 text-xs font-semibold shadow-md ${
-              flash === 'on'
-                ? 'bg-orange-500 text-white'
-                : 'bg-slate-600 text-white'
+            className={`pointer-events-none fixed z-[61] rounded-full px-3 py-1 text-xs font-semibold shadow-md ${
+              flash === 'on' ? 'bg-orange-500 text-white' : 'bg-slate-600 text-white'
             }`}
+            style={{ left: pos.x - 20, top: Math.max(8, pos.y - 36) }}
           >
             {flash === 'on' ? '메일 알림 ON' : '메일 알림 OFF'}
           </motion.div>
@@ -98,7 +191,10 @@ function MailToastStack() {
       </AnimatePresence>
 
       {enabled && toasts.length > 0 && (
-        <>
+        <div
+          className="pointer-events-none fixed z-[60] flex flex-col items-end gap-1.5"
+          style={{ left: stackLeft, bottom: stackBottom, width: stackWidth }}
+        >
           <div className="pointer-events-auto flex justify-end w-full">
             <button
               type="button"
@@ -161,27 +257,31 @@ function MailToastStack() {
               ))}
             </AnimatePresence>
           </div>
-        </>
+        </div>
       )}
 
       <button
         type="button"
-        onClick={onToggle}
-        className={`pointer-events-auto relative inline-flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-all ${
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        className={`fixed z-[62] inline-flex h-12 w-12 items-center justify-center rounded-full border shadow-lg transition-colors touch-none select-none ${
           enabled
-            ? 'border-orange-300 bg-orange-500 text-white hover:bg-orange-600 scale-100'
+            ? 'border-orange-300 bg-orange-500 text-white hover:bg-orange-600'
             : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600'
         }`}
+        style={{ left: pos.x, top: pos.y }}
         aria-pressed={enabled}
         aria-label={enabled ? '메일 알림 끄기' : '메일 알림 켜기'}
-        title={enabled ? '메일 알림 ON (클릭하여 끄기)' : '메일 알림 OFF (클릭하여 켜기)'}
+        title={enabled ? '알림 ON · 드래그로 이동' : '알림 OFF · 드래그로 이동'}
       >
-        <Mail className={`w-5 h-5 ${enabled ? 'fill-white/20' : ''}`} />
+        <Mail className={`w-5 h-5 pointer-events-none ${enabled ? 'fill-white/20' : ''}`} />
         {enabled && (
-          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white" />
+          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-white pointer-events-none" />
         )}
       </button>
-    </div>
+    </>
   );
 }
 

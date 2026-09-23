@@ -1,0 +1,302 @@
+[
+  {
+    "id": "gt-001",
+    "language": "ko",
+    "body_file": "gt-001.body.txt",
+    "truth_file": "gt-001.truth.json"
+  },
+  {
+    "id": "gt-002",
+    "language": "en",
+    "body_file": "gt-002.body.txt",
+    "truth_file": "gt-002.truth.json"
+  },
+  {
+    "id": "gt-003",
+    "language": "zh",
+    "body_file": "gt-003.body.txt",
+    "truth_file": "gt-003.truth.json"
+  },
+  {
+    "id": "gt-004",
+    "language": "mixed",
+    "body_file": "gt-004.body.txt",
+    "truth_file": "gt-004.truth.json"
+  },
+  {
+    "id": "gt-005",
+    "language": "ko",
+    "body_file": "gt-005.body.txt",
+    "truth_file": "gt-005.truth.json"
+  },
+  {
+    "id": "gt-006",
+    "language": "en",
+    "body_file": "gt-006.body.txt",
+    "truth_file": "gt-006.truth.json"
+  },
+  {
+    "id": "gt-007",
+    "language": "zh",
+    "body_file": "gt-007.body.txt",
+    "truth_file": "gt-007.truth.json"
+  },
+  {
+    "id": "gt-008",
+    "language": "mixed",
+    "body_file": "gt-008.body.txt",
+    "truth_file": "gt-008.truth.json"
+  },
+  {
+    "id": "gt-009",
+    "language": "ko",
+    "body_file": "gt-009.body.txt",
+    "truth_file": "gt-009.truth.json"
+  },
+  {
+    "id": "gt-010",
+    "language": "en",
+    "body_file": "gt-010.body.txt",
+    "truth_file": "gt-010.truth.json"
+  },
+  {
+    "id": "gt-011",
+    "language": "zh",
+    "body_file": "gt-011.body.txt",
+    "truth_file": "gt-011.truth.json"
+  },
+  {
+    "id": "gt-012",
+    "language": "mixed",
+    "body_file": "gt-012.body.txt",
+    "truth_file": "gt-012.truth.json"
+  },
+  {
+    "id": "gt-013",
+    "language": "ko",
+    "body_file": "gt-013.body.txt",
+    "truth_file": "gt-013.truth.json"
+  },
+  {
+    "id": "gt-014",
+    "language": "en",
+    "body_file": "gt-014.body.txt",
+    "truth_file": "gt-014.truth.json"
+  },
+  {
+    "id": "gt-015",
+    "language": "zh",
+    "body_file": "gt-015.body.txt",
+    "truth_file": "gt-015.truth.json"
+  },
+  {
+    "id": "gt-016",
+    "language": "mixed",
+    "body_file": "gt-016.body.txt",
+    "truth_file": "gt-016.truth.json"
+  },
+  {
+    "id": "gt-017",
+    "language": "ko",
+    "body_file": "gt-017.body.txt",
+    "truth_file": "gt-017.truth.json"
+  },
+  {
+    "id": "gt-018",
+    "language": "en",
+    "body_file": "gt-018.body.txt",
+    "truth_file": "gt-018.truth.json"
+  },
+  {
+    "id": "gt-019",
+    "language": "zh",
+    "body_file": "gt-019.body.txt",
+    "truth_file": "gt-019.truth.json"
+  },
+  {
+    "id": "gt-020",
+    "language": "mixed",
+    "body_file": "gt-020.body.txt",
+    "truth_file": "gt-020.truth.json"
+  },
+  {
+    "id": "gt-021",
+    "language": "ko",
+    "body_file": "gt-021.body.txt",
+    "truth_file": "gt-021.truth.json"
+  },
+  {
+    "id": "gt-022",
+    "language": "en",
+    "body_file": "gt-022.body.txt",
+    "truth_file": "gt-022.truth.json"
+  },
+  {
+    "id": "gt-023",
+    "language": "zh",
+    "body_file": "gt-023.body.txt",
+    "truth_file": "gt-023.truth.json"
+  },
+  {
+    "id": "gt-024",
+    "language": "mixed",
+    "body_file": "gt-024.body.txt",
+    "truth_file": "gt-024.truth.json"
+  },
+  {
+    "id": "gt-025",
+    "language": "ko",
+    "body_file": "gt-025.body.txt",
+    "truth_file": "gt-025.truth.json"
+  },
+  {
+    "id": "gt-026",
+    "language": "en",
+    "body_file": "gt-026.body.txt",
+    "truth_file": "gt-026.truth.json"
+  },
+  {
+    "id": "gt-027",
+    "language": "zh",
+    "body_file": "gt-027.body.txt",
+    "truth_file": "gt-027.truth.json"
+  },
+  {
+    "id": "gt-028",
+    "language": "mixed",
+    "body_file": "gt-028.body.txt",
+    "truth_file": "gt-028.truth.json"
+  },
+  {
+    "id": "gt-029",
+    "language": "ko",
+    "body_file": "gt-029.body.txt",
+    "truth_file": "gt-029.truth.json"
+  },
+  {
+    "id": "gt-030",
+    "language": "en",
+    "body_file": "gt-030.body.txt",
+    "truth_file": "gt-030.truth.json"
+  },
+  {
+    "id": "gt-031",
+    "language": "zh",
+    "body_file": "gt-031.body.txt",
+    "truth_file": "gt-031.truth.json"
+  },
+  {
+    "id": "gt-032",
+    "language": "mixed",
+    "body_file": "gt-032.body.txt",
+    "truth_file": "gt-032.truth.json"
+  },
+  {
+    "id": "gt-033",
+    "language": "ko",
+    "body_file": "gt-033.body.txt",
+    "truth_file": "gt-033.truth.json"
+  },
+  {
+    "id": "gt-034",
+    "language": "en",
+    "body_file": "gt-034.body.txt",
+    "truth_file": "gt-034.truth.json"
+  },
+  {
+    "id": "gt-035",
+    "language": "zh",
+    "body_file": "gt-035.body.txt",
+    "truth_file": "gt-035.truth.json"
+  },
+  {
+    "id": "gt-036",
+    "language": "mixed",
+    "body_file": "gt-036.body.txt",
+    "truth_file": "gt-036.truth.json"
+  },
+  {
+    "id": "gt-037",
+    "language": "ko",
+    "body_file": "gt-037.body.txt",
+    "truth_file": "gt-037.truth.json"
+  },
+  {
+    "id": "gt-038",
+    "language": "en",
+    "body_file": "gt-038.body.txt",
+    "truth_file": "gt-038.truth.json"
+  },
+  {
+    "id": "gt-039",
+    "language": "zh",
+    "body_file": "gt-039.body.txt",
+    "truth_file": "gt-039.truth.json"
+  },
+  {
+    "id": "gt-040",
+    "language": "mixed",
+    "body_file": "gt-040.body.txt",
+    "truth_file": "gt-040.truth.json"
+  },
+  {
+    "id": "gt-041",
+    "language": "ko",
+    "body_file": "gt-041.body.txt",
+    "truth_file": "gt-041.truth.json"
+  },
+  {
+    "id": "gt-042",
+    "language": "en",
+    "body_file": "gt-042.body.txt",
+    "truth_file": "gt-042.truth.json"
+  },
+  {
+    "id": "gt-043",
+    "language": "zh",
+    "body_file": "gt-043.body.txt",
+    "truth_file": "gt-043.truth.json"
+  },
+  {
+    "id": "gt-044",
+    "language": "mixed",
+    "body_file": "gt-044.body.txt",
+    "truth_file": "gt-044.truth.json"
+  },
+  {
+    "id": "gt-045",
+    "language": "ko",
+    "body_file": "gt-045.body.txt",
+    "truth_file": "gt-045.truth.json"
+  },
+  {
+    "id": "gt-046",
+    "language": "en",
+    "body_file": "gt-046.body.txt",
+    "truth_file": "gt-046.truth.json"
+  },
+  {
+    "id": "gt-047",
+    "language": "zh",
+    "body_file": "gt-047.body.txt",
+    "truth_file": "gt-047.truth.json"
+  },
+  {
+    "id": "gt-048",
+    "language": "mixed",
+    "body_file": "gt-048.body.txt",
+    "truth_file": "gt-048.truth.json"
+  },
+  {
+    "id": "gt-049",
+    "language": "ko",
+    "body_file": "gt-049.body.txt",
+    "truth_file": "gt-049.truth.json"
+  },
+  {
+    "id": "gt-050",
+    "language": "en",
+    "body_file": "gt-050.body.txt",
+    "truth_file": "gt-050.truth.json"
+  }
+]

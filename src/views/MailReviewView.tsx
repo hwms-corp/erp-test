@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileText, Search, Sparkles } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  FileText,
+  Forward,
+  Reply,
+  Search,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
 import { useMail } from '@/hooks/useMail';
 import { usePartners } from '@/hooks/usePartners';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,6 +23,7 @@ import { MaterialEditor } from '@/components/MaterialEditor';
 import { ExtractionKvTable } from '@/components/ExtractionKvTable';
 import { MailHtmlBody } from '@/components/MailHtmlBody';
 import { AttachmentPreviewModal } from '@/components/AttachmentPreviewModal';
+import { MailComposeModal, type ComposeDraft } from '@/components/MailComposeModal';
 import {
   applyOrderFormToExtraction,
   extractionToMaterialLines,
@@ -20,9 +34,26 @@ import {
   formatBytes,
   isPreviewableMime,
 } from '@/lib/gmailAttachment';
+import { displayMailBody } from '@/lib/mailBody';
 import type { CanonicalExtraction, MailAttachment, MailMessage, MailProcessStatus, PartnerMatchCandidate } from '@/types/aiMail';
 import type { MaterialLine, Partner } from '@/types';
 import { emptyMaterialLine, fmtW, today } from '@/types';
+
+function extractEmail(addr: string | null | undefined): string {
+  if (!addr) return '';
+  const m = addr.match(/<([^>]+)>/);
+  return (m?.[1] || addr).trim();
+}
+
+function withRePrefix(subject: string | null | undefined): string {
+  const s = (subject || '').trim() || '(제목 없음)';
+  return /^re:/i.test(s) ? s : `Re: ${s}`;
+}
+
+function withFwdPrefix(subject: string | null | undefined): string {
+  const s = (subject || '').trim() || '(제목 없음)';
+  return /^(fwd|fw):/i.test(s) ? s : `Fwd: ${s}`;
+}
 
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
@@ -77,7 +108,7 @@ export function MailReviewView() {
   const mailId = Number(id);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { fetchMail, fetchAttachments, fetchThreadMails, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners } = useMail();
+  const { fetchMail, fetchAttachments, fetchThreadMails, markMailRead, runAiPipeline, saveExtraction, registerAsDraft, suggestPartners, softDeleteMails } = useMail();
   const { fetchPartners } = usePartners();
 
   const [mail, setMail] = useState<MailMessage | null>(null);
@@ -101,6 +132,8 @@ export function MailReviewView() {
   const [attBusyId, setAttBusyId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const salesPartners = useMemo(
     () => partners.filter(p => p.type === 'sales' || p.type === 'both'),
@@ -347,8 +380,63 @@ export function MailReviewView() {
     return <div className="p-8 text-slate-400">메일 로딩 중…</div>;
   }
 
+  const openReply = () => {
+    const quoted = displayMailBody(mail);
+    setComposeDraft({
+      mode: 'reply',
+      to: extractEmail(mail.from_addr),
+      subject: withRePrefix(mail.subject),
+      body: `\n\n----- Original Message -----\n보낸사람: ${mail.from_addr || ''}\n제목: ${mail.subject || ''}\n\n${quoted === '(본문 없음)' ? '' : quoted}`,
+      threadId: mail.gmail_thread_id,
+      inReplyTo: mail.gmail_message_id ? `<${mail.gmail_message_id}@gmail.com>` : undefined,
+      references: mail.gmail_message_id ? `<${mail.gmail_message_id}@gmail.com>` : undefined,
+    });
+    setComposeOpen(true);
+  };
+
+  const openForward = () => {
+    const quoted = displayMailBody(mail);
+    setComposeDraft({
+      mode: 'forward',
+      to: '',
+      subject: withFwdPrefix(mail.subject),
+      body:
+        `\n\n---------- Forwarded message ---------\n`
+        + `From: ${mail.from_addr || ''}\n`
+        + `Date: ${mail.received_at || ''}\n`
+        + `Subject: ${mail.subject || ''}\n`
+        + `To: ${mail.to_addr || ''}\n\n`
+        + `${quoted === '(본문 없음)' ? '' : quoted}`,
+      threadId: null,
+    });
+    setComposeOpen(true);
+  };
+
+  const deleteMail = async () => {
+    if (!confirm('이 메일을 휴지통으로 이동할까요?\nGmail 휴지통과 함께 맞춰집니다.')) return;
+    setBusy(true);
+    const { error } = await softDeleteMails([mail.id]);
+    setBusy(false);
+    if (error) {
+      setMsg(`삭제 실패: ${error.message}`);
+      return;
+    }
+    navigate('/mail?box=trash');
+  };
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4 min-w-0">
+      {composeOpen && (
+        <MailComposeModal
+          open
+          draft={composeDraft}
+          onClose={() => {
+            setComposeOpen(false);
+            setComposeDraft(null);
+          }}
+          onSent={() => navigate('/mail?box=sent')}
+        />
+      )}
       {/* 모바일·태블릿: 세로 / 데스크톱(lg+): 기존 가로 헤더 */}
       <div className="flex flex-col gap-3 min-w-0 lg:flex-row lg:flex-wrap lg:items-center lg:gap-3">
         <div className="flex items-start gap-2 min-w-0 lg:items-center lg:flex-1">
@@ -364,13 +452,40 @@ export function MailReviewView() {
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-2 w-full min-w-0 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
+        <div className="grid grid-cols-2 gap-2 w-full min-w-0 sm:grid-cols-3 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={openReply}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Reply className="w-4 h-4 shrink-0" />
+            답장
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={openForward}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Forward className="w-4 h-4 shrink-0" />
+            전달
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void deleteMail()}
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            <Trash2 className="w-4 h-4 shrink-0" />
+            삭제
+          </button>
           <button
             type="button"
             disabled={busy}
             onClick={() => void rerunAi()}
             title="분류·추출을 다시 실행합니다. 자동등록은 하지 않습니다."
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 min-w-0"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50 min-w-0 col-span-2 sm:col-span-1"
           >
             <Sparkles className="w-4 h-4 shrink-0" />
             <span className="truncate">{busy ? '재실행 중…' : 'AI분류 재실행'}</span>

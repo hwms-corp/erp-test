@@ -1,0 +1,9 @@
+# https://railway.app 등에서 Root Directory = ai-doc-api 로 설정
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"

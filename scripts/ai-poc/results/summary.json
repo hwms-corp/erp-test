@@ -1,0 +1,8 @@
+{
+  "evaluated_at": "2026-09-21T01:18:31.309Z",
+  "sample_count": 50,
+  "document_classification_accuracy": 1,
+  "field_exact_match": 1,
+  "line_item_accuracy": 1,
+  "note": "Heuristic PoC baseline. Replace with multimodal LLM for production KPI."
+}

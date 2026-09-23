@@ -1,0 +1,10 @@
+Subject: RFQ #1049
+From: Pan Ocean <ops@panocean.example>
+Dear Sir,
+Please quote the following items.
+Company: Pan Ocean
+Required Date: 2026-10-22
+Vessel: MV TEST-49
+1. Item: Filter / Spec: 10 micron / Qty: 2 EA
+2. Item: Valve / Spec: DN50 PN16 / Qty: 4 EA
+Best regards

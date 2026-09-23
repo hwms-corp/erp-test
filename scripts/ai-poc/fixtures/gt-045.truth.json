@@ -1,0 +1,275 @@
+{
+  "document_type": "quotation_request",
+  "language": "ko",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "팬오션",
+      "original_key": "거래처",
+      "original_value": "팬오션",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "팬오션",
+      "language": "ko"
+    },
+    "contact_name": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "ko"
+    },
+    "email": {
+      "value": "ops@panocean.example",
+      "original_key": "email",
+      "original_value": "ops@panocean.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "ops@panocean.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-17",
+      "original_key": "request_date",
+      "original_value": "2026-09-17",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-17",
+      "language": "ko"
+    },
+    "delivery_date": {
+      "value": "2026-10-17",
+      "original_key": "납기",
+      "original_value": "2026-10-17",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-17",
+      "language": "ko"
+    },
+    "currency": {
+      "value": "KRW",
+      "original_key": "currency",
+      "original_value": "KRW",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "KRW",
+      "language": "ko"
+    },
+    "vessel": {
+      "value": "MV TEST-44",
+      "original_key": "선명",
+      "original_value": "MV TEST-44",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-44",
+      "language": "ko"
+    },
+    "contact_person": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "ko"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "필터",
+        "original_key": "품명",
+        "original_value": "필터",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "필터",
+        "language": "ko"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "10 micron",
+        "original_key": "사양",
+        "original_value": "10 micron",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "10 micron",
+        "language": "ko"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "수량",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "ko"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "밸브",
+        "original_key": "품명",
+        "original_value": "밸브",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "밸브",
+        "language": "ko"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "DN50 PN16",
+        "original_key": "사양",
+        "original_value": "DN50 PN16",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "DN50 PN16",
+        "language": "ko"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "수량",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "ko"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": "긴급 요청",
+    "original_key": "비고",
+    "original_value": "긴급 요청",
+    "confidence": 0.9,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": "긴급 요청",
+    "language": "ko"
+  }
+}

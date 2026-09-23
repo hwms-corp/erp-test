@@ -1,0 +1,11 @@
+Subject: RFQ #1033
+From: DSME <rfq@dsme.example>
+Dear Sir,
+Please quote the following items.
+Company: DSME
+Required Date: 2026-10-06
+Vessel: MV TEST-33
+1. Item: Hose / Spec: 1-1/2 inch / Qty: 2 M
+2. Item: Filter / Spec: 10 micron / Qty: 4 EA
+3. Item: Valve / Spec: DN50 PN16 / Qty: 6 EA
+Best regards

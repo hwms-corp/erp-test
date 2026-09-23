@@ -1,0 +1,11 @@
+Subject: RFQ #1045
+From: Hanjin Shipping <rfq@hanjin.example>
+Dear Sir,
+Please quote the following items.
+Company: Hanjin Shipping
+Required Date: 2026-10-18
+Vessel: MV TEST-45
+1. Item: Valve / Spec: DN50 PN16 / Qty: 2 EA
+2. Item: Gasket / Spec: ASME B16.20 / Qty: 4 SET
+3. Item: Bearing / Spec: 6205-2RS / Qty: 6 EA
+Best regards

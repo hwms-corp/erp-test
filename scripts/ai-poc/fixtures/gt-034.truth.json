@@ -1,0 +1,347 @@
+{
+  "document_type": "quotation_request",
+  "language": "en",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "DSME",
+      "original_key": "Company",
+      "original_value": "DSME",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "DSME",
+      "language": "en"
+    },
+    "contact_name": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": null,
+      "language": "en"
+    },
+    "email": {
+      "value": "rfq@dsme.example",
+      "original_key": "email",
+      "original_value": "rfq@dsme.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "rfq@dsme.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-06",
+      "original_key": "request_date",
+      "original_value": "2026-09-06",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-06",
+      "language": "en"
+    },
+    "delivery_date": {
+      "value": "2026-10-06",
+      "original_key": "Required Date",
+      "original_value": "2026-10-06",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-06",
+      "language": "en"
+    },
+    "currency": {
+      "value": "USD",
+      "original_key": "currency",
+      "original_value": "USD",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "USD",
+      "language": "en"
+    },
+    "vessel": {
+      "value": "MV TEST-33",
+      "original_key": "Vessel",
+      "original_value": "MV TEST-33",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-33",
+      "language": "en"
+    },
+    "contact_person": {
+      "value": null,
+      "original_key": "담당",
+      "original_value": null,
+      "confidence": 0,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": null,
+      "language": "en"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "Hose",
+        "original_key": "Item",
+        "original_value": "Hose",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Hose",
+        "language": "en"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "1-1/2 inch",
+        "original_key": "Spec",
+        "original_value": "1-1/2 inch",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "1-1/2 inch",
+        "language": "en"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "Qty",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "en"
+      },
+      "unit": {
+        "value": "M",
+        "original_key": "unit",
+        "original_value": "M",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "M",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "Filter",
+        "original_key": "Item",
+        "original_value": "Filter",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Filter",
+        "language": "en"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "10 micron",
+        "original_key": "Spec",
+        "original_value": "10 micron",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "10 micron",
+        "language": "en"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "Qty",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "en"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "Valve",
+        "original_key": "Item",
+        "original_value": "Valve",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Valve",
+        "language": "en"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "DN50 PN16",
+        "original_key": "Spec",
+        "original_value": "DN50 PN16",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "DN50 PN16",
+        "language": "en"
+      },
+      "quantity": {
+        "value": 6,
+        "original_key": "Qty",
+        "original_value": "6",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6",
+        "language": "en"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": null,
+    "original_key": "비고",
+    "original_value": null,
+    "confidence": 0,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": null,
+    "language": "en"
+  }
+}

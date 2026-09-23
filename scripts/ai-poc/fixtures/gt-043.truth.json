@@ -1,0 +1,347 @@
+{
+  "document_type": "quotation_request",
+  "language": "zh",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "三星重工",
+      "original_key": "公司",
+      "original_value": "三星重工",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "三星重工",
+      "language": "zh"
+    },
+    "contact_name": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": null,
+      "language": "zh"
+    },
+    "email": {
+      "value": "buyer@shi.example",
+      "original_key": "email",
+      "original_value": "buyer@shi.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "buyer@shi.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-15",
+      "original_key": "request_date",
+      "original_value": "2026-09-15",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-15",
+      "language": "zh"
+    },
+    "delivery_date": {
+      "value": "2026-10-15",
+      "original_key": "交货日期",
+      "original_value": "2026-10-15",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-15",
+      "language": "zh"
+    },
+    "currency": {
+      "value": "CNY",
+      "original_key": "currency",
+      "original_value": "CNY",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "CNY",
+      "language": "zh"
+    },
+    "vessel": {
+      "value": "MV TEST-42",
+      "original_key": "船名",
+      "original_value": "MV TEST-42",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-42",
+      "language": "zh"
+    },
+    "contact_person": {
+      "value": null,
+      "original_key": "담당",
+      "original_value": null,
+      "confidence": 0,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": null,
+      "language": "zh"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "轴承",
+        "original_key": "产品名称",
+        "original_value": "轴承",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "轴承",
+        "language": "zh"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "6205-2RS",
+        "original_key": "规格",
+        "original_value": "6205-2RS",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6205-2RS",
+        "language": "zh"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "数量",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "zh"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "软管",
+        "original_key": "产品名称",
+        "original_value": "软管",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "软管",
+        "language": "zh"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "1-1/2 inch",
+        "original_key": "规格",
+        "original_value": "1-1/2 inch",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "1-1/2 inch",
+        "language": "zh"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "数量",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "zh"
+      },
+      "unit": {
+        "value": "M",
+        "original_key": "unit",
+        "original_value": "M",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "M",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "过滤器",
+        "original_key": "产品名称",
+        "original_value": "过滤器",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "过滤器",
+        "language": "zh"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "10 micron",
+        "original_key": "规格",
+        "original_value": "10 micron",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "10 micron",
+        "language": "zh"
+      },
+      "quantity": {
+        "value": 6,
+        "original_key": "数量",
+        "original_value": "6",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "6",
+        "language": "zh"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": null,
+    "original_key": "비고",
+    "original_value": null,
+    "confidence": 0,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": null,
+    "language": "zh"
+  }
+}

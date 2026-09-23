@@ -1,0 +1,275 @@
+{
+  "document_type": "quotation_request",
+  "language": "mixed",
+  "overall_confidence": 1,
+  "customer": {
+    "name": {
+      "value": "DSME",
+      "original_key": "거래처",
+      "original_value": "DSME",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "DSME",
+      "language": "mixed"
+    },
+    "contact_name": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "mixed"
+    },
+    "email": {
+      "value": "rfq@dsme.example",
+      "original_key": "email",
+      "original_value": "rfq@dsme.example",
+      "confidence": 0.9,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "rfq@dsme.example",
+      "language": "en"
+    },
+    "tel": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "biz_no": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    },
+    "addr": {
+      "value": null,
+      "original_key": null,
+      "original_value": null,
+      "confidence": 0,
+      "source_file": null,
+      "source_page": null,
+      "evidence_text": null,
+      "language": null
+    }
+  },
+  "request": {
+    "request_date": {
+      "value": "2026-09-16",
+      "original_key": "request_date",
+      "original_value": "2026-09-16",
+      "confidence": 0.8,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-09-16",
+      "language": "mixed"
+    },
+    "delivery_date": {
+      "value": "2026-10-16",
+      "original_key": "납기",
+      "original_value": "2026-10-16",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "2026-10-16",
+      "language": "mixed"
+    },
+    "currency": {
+      "value": "KRW",
+      "original_key": "currency",
+      "original_value": "KRW",
+      "confidence": 0.7,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "KRW",
+      "language": "mixed"
+    },
+    "vessel": {
+      "value": "MV TEST-43",
+      "original_key": "선명",
+      "original_value": "MV TEST-43",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "MV TEST-43",
+      "language": "mixed"
+    },
+    "contact_person": {
+      "value": "김영업",
+      "original_key": "담당",
+      "original_value": "김영업",
+      "confidence": 1,
+      "source_file": "body.txt",
+      "source_page": 1,
+      "evidence_text": "김영업",
+      "language": "mixed"
+    }
+  },
+  "items": [
+    {
+      "product_name": {
+        "value": "Hose",
+        "original_key": "품명",
+        "original_value": "Hose",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Hose",
+        "language": "mixed"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "1-1/2 inch",
+        "original_key": "사양",
+        "original_value": "1-1/2 inch",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "1-1/2 inch",
+        "language": "mixed"
+      },
+      "quantity": {
+        "value": 2,
+        "original_key": "수량",
+        "original_value": "2",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "2",
+        "language": "mixed"
+      },
+      "unit": {
+        "value": "M",
+        "original_key": "unit",
+        "original_value": "M",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "M",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    },
+    {
+      "product_name": {
+        "value": "Filter",
+        "original_key": "품명",
+        "original_value": "Filter",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "Filter",
+        "language": "mixed"
+      },
+      "product_code": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "specification": {
+        "value": "10 micron",
+        "original_key": "사양",
+        "original_value": "10 micron",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "10 micron",
+        "language": "mixed"
+      },
+      "quantity": {
+        "value": 4,
+        "original_key": "수량",
+        "original_value": "4",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "4",
+        "language": "mixed"
+      },
+      "unit": {
+        "value": "EA",
+        "original_key": "unit",
+        "original_value": "EA",
+        "confidence": 1,
+        "source_file": "body.txt",
+        "source_page": 1,
+        "evidence_text": "EA",
+        "language": "en"
+      },
+      "requested_price": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      },
+      "remark": {
+        "value": null,
+        "original_key": null,
+        "original_value": null,
+        "confidence": 0,
+        "source_file": null,
+        "source_page": null,
+        "evidence_text": null,
+        "language": null
+      }
+    }
+  ],
+  "remarks": {
+    "value": "긴급 요청",
+    "original_key": "비고",
+    "original_value": "긴급 요청",
+    "confidence": 0.9,
+    "source_file": "body.txt",
+    "source_page": 1,
+    "evidence_text": "긴급 요청",
+    "language": "mixed"
+  }
+}
