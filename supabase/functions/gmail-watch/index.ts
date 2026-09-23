@@ -1048,7 +1048,9 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       }
 
       const subjectLine = headerValue(headers, 'Subject');
+      const fromLine = headerValue(headers, 'From');
       const bodyForAi = [
+        fromLine ? `[발신]\n${fromLine}` : '',
         subjectLine ? `[제목]\n${subjectLine}` : '',
         text ? `[본문]\n${text}` : '',
         !text && msg.snippet ? `[스니펫]\n${msg.snippet}` : '',

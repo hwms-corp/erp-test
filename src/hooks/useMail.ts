@@ -185,9 +185,10 @@ export function useMail() {
       .update({ process_status: 'classifying', error_message: null, status_reason: null })
       .eq('id', mail.id);
 
-    // gmail-watch 자동 분류와 동일한 본문 포맷
+    // gmail-watch 자동 분류와 동일한 본문 포맷 ([발신]/[제목]/[본문])
     const bodyPart = displayMailBody(mail);
     const text = [
+      mail.from_addr ? `[발신]\n${mail.from_addr}` : '',
       mail.subject ? `[제목]\n${mail.subject}` : '',
       bodyPart && bodyPart !== '(본문 없음)' ? `[본문]\n${bodyPart}` : '',
       !mail.body_text && mail.snippet ? `[스니펫]\n${mail.snippet}` : '',
