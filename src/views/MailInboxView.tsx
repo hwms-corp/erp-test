@@ -21,7 +21,7 @@ function formatReceivedAtKst(iso: string | null | undefined): string {
   return s.replace(/-/g, '/');
 }
 
-/** 전체메일함용 받은/보낸 표시 (fill=PC 테이블 — 셀 배경으로 세로 풀높이) */
+/** 전체메일함용 받은/보낸 표시 (fill=PC 테이블 세로 풀높이 + 색/테두리) */
 function MailDirectionBadge({ sent, fill = false }: { sent: boolean; fill?: boolean }) {
   const label = sent ? '보냄' : '받음';
   const title = sent ? '보낸메일' : '받은메일';
@@ -30,11 +30,14 @@ function MailDirectionBadge({ sent, fill = false }: { sent: boolean; fill?: bool
   ) : (
     <ArrowDownLeft className="w-3.5 h-3.5 shrink-0" strokeWidth={3} aria-hidden />
   );
+  const tone = sent
+    ? 'bg-sky-50 text-sky-700 border-sky-200'
+    : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
   if (fill) {
     return (
       <span
-        className="inline-flex items-center justify-center gap-0.5 whitespace-nowrap text-[10px] font-bold tracking-tight"
+        className={`absolute inset-0 z-[1] flex items-center justify-center gap-0.5 border-r whitespace-nowrap text-[10px] font-bold tracking-tight ${tone}`}
         title={title}
       >
         {icon}
@@ -45,11 +48,7 @@ function MailDirectionBadge({ sent, fill = false }: { sent: boolean; fill?: bool
 
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-bold tracking-tight leading-none whitespace-nowrap ${
-        sent
-          ? 'bg-sky-50 text-sky-700 border-sky-100'
-          : 'bg-emerald-50 text-emerald-700 border-emerald-100'
-      }`}
+      className={`inline-flex shrink-0 items-center justify-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-bold tracking-tight leading-none whitespace-nowrap ${tone}`}
       title={title}
     >
       {icon}
@@ -1001,7 +1000,7 @@ export function MailInboxView() {
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>
               {showDirection && (
-                <th className="px-1.5 py-2 w-[5.25rem] text-center text-[10px] font-semibold whitespace-nowrap" title="받은/보낸">
+                <th className="px-1.5 py-2 w-[5.5rem] text-center text-[10px] font-semibold whitespace-nowrap" title="받은/보낸">
                   구분
                 </th>
               )}
@@ -1045,7 +1044,15 @@ export function MailInboxView() {
                   onClick={() => navigate(`/mail/${m.id}`)}
                 >
                   {showDirection && (
-                    <td className="relative p-0 w-[5.25rem] align-stretch">
+                    <td className="relative p-0 w-[5.5rem]">
+                      {/* 행 높이·너비 확보 (absolute 배지 붕괴 방지) */}
+                      <span
+                        className="invisible inline-flex items-center gap-0.5 whitespace-nowrap px-2 py-1.5 text-[10px] font-bold"
+                        aria-hidden
+                      >
+                        <span className="inline-block w-3.5 h-3.5" />
+                        보냄
+                      </span>
                       <MailDirectionBadge sent={!!m.is_sent} fill />
                     </td>
                   )}
