@@ -627,6 +627,62 @@ export function useMail() {
     return { data: (data ?? []) as import('@/types/aiMail').GmailLabelRow[], error };
   }, []);
 
+  /** 좌측 메일함·AI상태·라벨별 건수 (검색어 무관, 휴지통 분리) */
+  const fetchMailboxCounts = useCallback(async () => {
+    const [{ data: rows, error }, { count: trash, error: trashErr }] = await Promise.all([
+      supabase
+        .from('mail_messages')
+        .select('is_sent, is_starred, is_read, process_status, gmail_label_ids')
+        .is('deleted_at', null),
+      supabase
+        .from('mail_messages')
+        .select('id', { count: 'exact', head: true })
+        .not('deleted_at', 'is', null),
+    ]);
+    if (error || trashErr) {
+      return { data: null as Record<string, number> | null, error: error || trashErr };
+    }
+
+    const counts: Record<string, number> = {
+      all: 0,
+      latest: 0,
+      inbox: 0,
+      sent: 0,
+      read: 0,
+      unread: 0,
+      starred: 0,
+      trash: trash ?? 0,
+    };
+    for (const s of PROCESS_STATUSES) counts[s] = 0;
+
+    for (const r of rows ?? []) {
+      counts.all += 1;
+      const sent = !!r.is_sent;
+      const starred = !!r.is_starred;
+      const read = r.is_read === true;
+      if (starred) counts.starred += 1;
+      if (sent) {
+        counts.sent += 1;
+      } else {
+        counts.inbox += 1;
+        if (!starred) counts.latest += 1;
+        if (read) counts.read += 1;
+        else counts.unread += 1;
+      }
+      const ps = String(r.process_status || '');
+      if (ps && Object.prototype.hasOwnProperty.call(counts, ps)) {
+        counts[ps] += 1;
+      }
+      const labels = (r.gmail_label_ids || []) as string[];
+      for (const lid of labels) {
+        if (!lid) continue;
+        const key = `label:${lid}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+    return { data: counts, error: null };
+  }, []);
+
   return {
     fetchMails,
     fetchMail,
@@ -640,6 +696,7 @@ export function useMail() {
     setMailStarred,
     modifyMailLabels,
     fetchGmailLabels,
+    fetchMailboxCounts,
     upsertMail,
     runAiPipeline,
     saveExtraction,

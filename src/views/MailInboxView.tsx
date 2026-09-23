@@ -85,7 +85,7 @@ function MailSelectCheckbox({
 }
 
 const STATUS_LABEL: Record<MailProcessStatus, string> = {
-  received: '수신',
+  received: '수신(미분류)',
   classifying: '분류중',
   extracting: '추출중',
   review_required: '검토필요',
@@ -137,7 +137,7 @@ const BOX_MAIN: { id: MailBoxId; label: string; icon: 'latest' | 'inbox' | 'all'
 ];
 
 const BOX_STATUS: { id: MailProcessStatus; label: string }[] = [
-  { id: 'received', label: '수신' },
+  { id: 'received', label: '수신(미분류)' },
   { id: 'classifying', label: '분류중' },
   { id: 'extracting', label: '추출중' },
   { id: 'review_required', label: '검토필요' },
@@ -157,6 +157,62 @@ function boxIcon(kind: (typeof BOX_MAIN)[number]['icon'], className = 'w-4 h-4')
   if (kind === 'all') return <FolderOpen className={`${className} text-slate-500`} />;
   // inbox
   return <Inbox className={`${className} text-emerald-600`} />;
+}
+
+/** 메일함 건수 타원 뱃지 — 긴 메뉴명 위 오른쪽 오버레이 */
+function MailCountPill({
+  count,
+  active = false,
+  tone = 'slate',
+}: {
+  count?: number;
+  active?: boolean;
+  tone?: 'slate' | 'violet' | 'chip' | 'chipActive';
+}) {
+  if (count == null) return null;
+  const text = count.toLocaleString('ko-KR');
+  const cls =
+    tone === 'chipActive'
+      ? 'bg-white/25 text-white'
+      : tone === 'chip'
+        ? 'bg-slate-200/90 text-slate-600'
+        : tone === 'violet'
+          ? active
+            ? 'bg-violet-500 text-white'
+            : 'bg-violet-100 text-violet-700'
+          : active
+            ? 'bg-indigo-100 text-indigo-700'
+            : 'bg-slate-100 text-slate-500';
+  return (
+    <span
+      className={`inline-flex items-center justify-center shrink-0 rounded-full px-1.5 min-w-[1.35rem] h-[1.15rem] text-[10px] font-semibold tabular-nums leading-none ${cls}`}
+      aria-label={`${text}건`}
+    >
+      {text}
+    </span>
+  );
+}
+
+/** 메뉴명 + 오른쪽 끝 건수 (길면 메뉴명 위에 덮임) */
+function NavLabelWithCount({
+  label,
+  count,
+  active,
+  tone = 'slate',
+}: {
+  label: string;
+  count?: number;
+  active?: boolean;
+  tone?: 'slate' | 'violet';
+}) {
+  return (
+    <span className="relative min-w-0 flex-1 overflow-hidden">
+      <span className="block truncate">{label}</span>
+      <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 shadow-sm rounded-full">
+        <MailCountPill count={count} active={active} tone={tone} />
+      </span>
+    </span>
+  );
 }
 
 /** 모바일 가로 칩 메뉴 — 넘치면 좌우 화살표로 스크롤 */
@@ -242,9 +298,10 @@ function MobileScrollChipRow({
 
 export function MailInboxView() {
   const { user } = useAuth();
-  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, restoreMails, hardDeleteMails, setMailStarred, setMailRead, fetchGmailLabels } = useMail();
+  const { fetchMails, fetchMailAiSettings, updateMailAiSettings, softDeleteMails, restoreMails, hardDeleteMails, setMailStarred, setMailRead, fetchGmailLabels, fetchMailboxCounts } = useMail();
   const [mails, setMails] = useState<MailMessage[]>([]);
   const [gmailLabels, setGmailLabels] = useState<GmailLabelRow[]>([]);
+  const [boxCounts, setBoxCounts] = useState<Record<string, number>>({});
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [justArrivedIds, setJustArrivedIds] = useState<Set<number>>(new Set());
@@ -366,6 +423,11 @@ export function MailInboxView() {
     setGmailLabels(data ?? []);
   }, [fetchGmailLabels]);
 
+  const loadCounts = useCallback(async () => {
+    const { data } = await fetchMailboxCounts();
+    if (data) setBoxCounts(data);
+  }, [fetchMailboxCounts]);
+
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     const { data, count } = await fetchMails({
@@ -384,12 +446,22 @@ export function MailInboxView() {
       return next;
     });
     if (!opts?.silent) setLoading(false);
-  }, [fetchMails, box, q, page, showStarPriorityToggle, starPriority]);
+    void loadCounts();
+  }, [fetchMails, box, q, page, showStarPriorityToggle, starPriority, loadCounts]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSettings(); }, [loadSettings]);
   useEffect(() => { void loadLabels(); }, [loadLabels]);
+  useEffect(() => { void loadCounts(); }, [loadCounts]);
   useEffect(() => { setSelectedIds(new Set()); }, [box, q, page]);
+
+  const countsRefreshTimer = useRef<number | null>(null);
+  const scheduleCountsRefresh = useCallback(() => {
+    if (countsRefreshTimer.current) window.clearTimeout(countsRefreshTimer.current);
+    countsRefreshTimer.current = window.setTimeout(() => {
+      void loadCounts();
+    }, 700);
+  }, [loadCounts]);
 
   useEffect(() => {
     const channel = supabase
@@ -437,6 +509,7 @@ export function MailInboxView() {
             next[idx] = { ...next[idx], ...row };
             return next;
           });
+          scheduleCountsRefresh();
         },
       )
       .on(
@@ -474,7 +547,7 @@ export function MailInboxView() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [load, refreshAiHealth, box]);
+  }, [load, refreshAiHealth, box, scheduleCountsRefresh]);
 
   const toggleAutoRegister = async () => {
     if (!isAdmin || !user || settingsBusy) return;
@@ -643,7 +716,7 @@ export function MailInboxView() {
     <button
       type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-2 rounded-lg text-left text-[13px] font-medium transition-colors ${
+      className={`w-full min-w-0 flex items-center gap-2 rounded-lg text-left text-[13px] font-medium transition-colors ${
         indent ? 'pl-2 pr-2 py-1.5' : 'px-2.5 py-2'
       } ${
         active
@@ -859,6 +932,7 @@ export function MailInboxView() {
                 >
                   <span>{boxIcon(b.icon, 'w-3.5 h-3.5')}</span>
                   {b.label}
+                  <MailCountPill count={boxCounts[b.id]} tone={active ? 'chipActive' : 'chip'} />
                 </button>
               );
             })}
@@ -879,13 +953,17 @@ export function MailInboxView() {
                     role="tab"
                     aria-selected={active}
                     onClick={() => setBox(id)}
-                    className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                       active
                         ? 'bg-violet-600 text-white'
                         : 'bg-violet-50 text-violet-700 border border-violet-100 hover:bg-violet-100'
                     }`}
                   >
                     {l.name}
+                    <MailCountPill
+                      count={boxCounts[id]}
+                      tone={active ? 'chipActive' : 'violet'}
+                    />
                   </button>
                 );
               })}
@@ -905,13 +983,14 @@ export function MailInboxView() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setBox(b.id)}
-                  className={`inline-flex shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                     active
                       ? 'bg-slate-800 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   {b.label}
+                  <MailCountPill count={boxCounts[b.id]} tone={active ? 'chipActive' : 'chip'} />
                 </button>
               );
             })}
@@ -953,8 +1032,8 @@ export function MailInboxView() {
                   <TreeBranch>
                     {BOX_MAIN.map(b => (
                       <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
-                        {boxIcon(b.icon)}
-                        <span className="truncate">{b.label}</span>
+                        <span className="shrink-0">{boxIcon(b.icon)}</span>
+                        <NavLabelWithCount label={b.label} count={boxCounts[b.id]} active={box === b.id} />
                       </NavBtn>
                     ))}
                   </TreeBranch>
@@ -980,7 +1059,7 @@ export function MailInboxView() {
                   <TreeBranch>
                     {BOX_STATUS.map(b => (
                       <NavBtn key={b.id} active={box === b.id} onClick={() => setBox(b.id)} indent>
-                        <span className="truncate">{b.label}</span>
+                        <NavLabelWithCount label={b.label} count={boxCounts[b.id]} active={box === b.id} />
                       </NavBtn>
                     ))}
                   </TreeBranch>
@@ -1013,7 +1092,12 @@ export function MailInboxView() {
                         const id = `label:${l.id}` as MailBoxId;
                         return (
                           <NavBtn key={l.id} active={box === id} onClick={() => setBox(id)} indent>
-                            <span className="truncate">{l.name}</span>
+                            <NavLabelWithCount
+                              label={l.name}
+                              count={boxCounts[id]}
+                              active={box === id}
+                              tone="violet"
+                            />
                           </NavBtn>
                         );
                       })}
@@ -1031,22 +1115,6 @@ export function MailInboxView() {
               <span className="ml-2 text-xs font-normal text-slate-400 tabular-nums">{totalItems}건</span>
             </p>
             <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
-              {showStarPriorityToggle && (
-                <button
-                  type="button"
-                  onClick={toggleStarPriority}
-                  aria-pressed={starPriority}
-                  title={starPriority ? '즐겨찾기 우선 정렬 ON — 클릭하면 해제' : '즐겨찾기 우선 정렬 OFF — 클릭하면 켜기'}
-                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-2 text-xs font-semibold transition-colors ${
-                    starPriority
-                      ? 'border-amber-200 bg-amber-50 text-amber-800'
-                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  <Star className={`w-4 h-4 ${starPriority ? 'text-amber-400 fill-amber-400' : 'text-amber-300'}`} />
-                  <span className="hidden sm:inline">{starPriority ? '별 우선' : '별 우선 끔'}</span>
-                </button>
-              )}
               <input
                 className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-full min-w-0 sm:w-56"
                 placeholder="제목/발신자 검색"
@@ -1076,6 +1144,24 @@ export function MailInboxView() {
             onToggle={toggleSelectAll}
             ariaLabel="현재 페이지 전체 선택"
           />
+          {showStarPriorityToggle && (
+            <button
+              type="button"
+              onClick={toggleStarPriority}
+              aria-pressed={starPriority}
+              aria-label={starPriority ? '즐겨찾기 우선 정렬 끄기' : '즐겨찾기 우선 정렬 켜기'}
+              title={starPriority ? '즐겨찾기 우선 정렬 ON — 클릭하면 해제' : '즐겨찾기 우선 정렬 OFF — 클릭하면 켜기'}
+              className="p-0.5"
+            >
+              <Star
+                className={`w-4 h-4 ${
+                  starPriority
+                    ? 'text-amber-400 fill-amber-400'
+                    : 'text-slate-300'
+                }`}
+              />
+            </button>
+          )}
           <span className="text-xs text-slate-500">전체 선택</span>
         </div>
         {loading && (
@@ -1190,7 +1276,26 @@ export function MailInboxView() {
               </th>
               {showStarColumn && (
                 <th className="px-1 py-2 w-10 text-center" aria-label="즐겨찾기">
-                  <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
+                  {showStarPriorityToggle ? (
+                    <button
+                      type="button"
+                      onClick={toggleStarPriority}
+                      aria-pressed={starPriority}
+                      aria-label={starPriority ? '즐겨찾기 우선 정렬 끄기' : '즐겨찾기 우선 정렬 켜기'}
+                      title={starPriority ? '즐겨찾기 우선 정렬 ON — 클릭하면 해제' : '즐겨찾기 우선 정렬 OFF — 클릭하면 켜기'}
+                      className="mx-auto p-0.5 inline-flex"
+                    >
+                      <Star
+                        className={`w-3.5 h-3.5 ${
+                          starPriority
+                            ? 'text-amber-400 fill-amber-400'
+                            : 'text-slate-300'
+                        }`}
+                      />
+                    </button>
+                  ) : (
+                    <Star className="w-3.5 h-3.5 mx-auto text-slate-300" />
+                  )}
                 </th>
               )}
               <th className="px-1 py-2 w-10 text-center" aria-label="읽음" title="읽음">

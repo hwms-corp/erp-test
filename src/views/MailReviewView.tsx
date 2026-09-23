@@ -61,7 +61,7 @@ function withFwdPrefix(subject: string | null | undefined): string {
 const inp = 'w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500';
 
 const STATUS_LABEL: Record<MailProcessStatus, string> = {
-  received: '수신',
+  received: '수신(미분류)',
   classifying: '분류중',
   extracting: '추출중',
   review_required: '검토필요',
