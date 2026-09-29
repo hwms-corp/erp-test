@@ -22,6 +22,19 @@ function requireEnv(name: string): string {
   return v;
 }
 
+/** Gmail internalDate(epoch ms) → ISO. 발신 Date 헤더 오류 등으로 미래 시각이 오면 now로 클램프. */
+function resolveReceivedAtIso(internalDateMs: string | number | null | undefined): string {
+  const now = Date.now();
+  const MAX_FUTURE_MS = 5 * 60 * 1000;
+  let ms = internalDateMs != null && internalDateMs !== '' ? Number(internalDateMs) : NaN;
+  if (!Number.isFinite(ms) || ms <= 0) ms = now;
+  if (ms > now + MAX_FUTURE_MS) {
+    console.warn('received_at clamped: future internalDate', { internalDateMs, ms, now });
+    ms = now;
+  }
+  return new Date(ms).toISOString();
+}
+
 function gmailUser(): string {
   return encodeURIComponent(Deno.env.get('GMAIL_USER')?.trim() || 'me');
 }
@@ -266,9 +279,7 @@ async function importSentToErp(
 
   const headers = msg.payload?.headers || [];
   const labels = (msg.labelIds || ['SENT']) as string[];
-  const internalDate = msg.internalDate
-    ? new Date(Number(msg.internalDate)).toISOString()
-    : new Date().toISOString();
+  const internalDate = resolveReceivedAtIso(msg.internalDate);
 
   const { data: row, error } = await sb
     .from('mail_messages')
