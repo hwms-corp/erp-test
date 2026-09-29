@@ -1,0 +1,7 @@
+{
+  "evaluated_at": "2026-09-28",
+  "finding": "All 50 GT fixtures miss only request.document_no (field_exact=0.75). customer/vessel/delivery_date and line items match.",
+  "failed_fields": {
+    "request.document_no": 50
+  }
+}

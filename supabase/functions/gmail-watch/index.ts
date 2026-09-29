@@ -359,6 +359,19 @@ function headerValue(headers: GmailHeader[] | undefined, name: string): string |
   return h?.value ?? null;
 }
 
+/** Gmail internalDate(epoch ms) → ISO. 발신 Date 헤더 오류 등으로 미래 시각이 오면 now로 클램프. */
+function resolveReceivedAtIso(internalDateMs: string | number | null | undefined): string {
+  const now = Date.now();
+  const MAX_FUTURE_MS = 5 * 60 * 1000;
+  let ms = internalDateMs != null && internalDateMs !== '' ? Number(internalDateMs) : NaN;
+  if (!Number.isFinite(ms) || ms <= 0) ms = now;
+  if (ms > now + MAX_FUTURE_MS) {
+    console.warn('received_at clamped: future internalDate', { internalDateMs, ms, now });
+    ms = now;
+  }
+  return new Date(ms).toISOString();
+}
+
 function collectText(payload: GmailPayload | undefined): { text: string | null; html: string | null } {
   let text: string | null = null;
   let html: string | null = null;
@@ -1047,9 +1060,7 @@ async function syncFromHistory(accessToken: string, incomingHistoryId?: string) 
       const text = stripQuotedReplyText(textRaw) || null;
       const html = htmlRaw || null;
       const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
-      const internalDate = msg.internalDate
-        ? new Date(Number(msg.internalDate)).toISOString()
-        : new Date().toISOString();
+      const internalDate = resolveReceivedAtIso(msg.internalDate);
 
       const { data: existing } = await sb
         .from('mail_messages')
@@ -1241,10 +1252,8 @@ async function backfillMailbox(
         const text = stripQuotedReplyText(collected.text) || null;
         const html = collected.html || null;
         const attachments = collectAttachmentMeta(msg.payload as GmailPayload);
-        // Gmail internalDate = 실제 수신(또는 발송) epoch ms
-        const internalDate = msg.internalDate
-          ? new Date(Number(msg.internalDate)).toISOString()
-          : new Date().toISOString();
+        // Gmail internalDate = 실제 수신(또는 발송) epoch ms (미래값 클램프)
+        const internalDate = resolveReceivedAtIso(msg.internalDate);
 
         const { data: row, error } = await sb
           .from('mail_messages')

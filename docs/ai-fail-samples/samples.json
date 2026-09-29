@@ -1,0 +1,222 @@
+[
+  {
+    "id": 10353,
+    "subject": "엘디씨코리아 견적의뢰, \"T-260928029\", \"DORIC COURAGE\", \"HMD, 8228, IMO NO. 9847451\" - 주수연 주임",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-28T04:55:04+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 10330,
+    "subject": "엘디씨코리아 견적의뢰, \"QK260928010\", \"SILVER ZOE\", \"HMD - 2424, IMO NO. 9692325\" - 신지원 사원",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-28T02:24:58+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 10220,
+    "subject": "[견적의뢰] QKPC03PC2609210047 : 1715/T0526/0301/022 for Vessel Pacific Sarah",
+    "from_addr": "ACE-RMS SPARE TEAM <spare@rmsmarineservice.kr>",
+    "received_at": "2026-09-23T07:04:10+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "수동 재실행 — 검토 필요 (자동등록 미실행)",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "manual_rerun_review"
+  },
+  {
+    "id": 203,
+    "subject": "견적의뢰 / QKPC03PC2609230038 / RFQ No.26091446",
+    "from_addr": "ACE-RMS SPARE TEAM <spare@rmsmarineservice.kr>",
+    "received_at": "2026-09-23T02:44:24+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 199,
+    "subject": "코리아마린서비스 엔지니어링 --> 해원마린서비스(주) '견적의뢰서 for Hafnia Tagus(STX S1694)' of 'KMSE-609-7586' ",
+    "from_addr": "<kmseng@kmseng.com>",
+    "received_at": "2026-09-23T02:13:11+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 198,
+    "subject": "엘디씨코리아 견적의뢰, \"CE260923002\", \"STAR ALTAIR\", \"Cochrane Shipb-128, IMO NO. \" - 심채린 사원",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-23T02:09:24+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 197,
+    "subject": "엘디씨코리아 견적의뢰, \"NE260923001\", \"QUARTZ\", \"HYUNDAI VINASHIN, S413, IMO NO. 9694361\" - 심채린 사원",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-23T01:43:33+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 196,
+    "subject": "코리아마린서비스 엔지니어링 --> 해원마린서비스(주) '견적의뢰서 for Hafnia Kestrel (SPP S5133)' of 'KMSE-609-7584' ",
+    "from_addr": "<kmseng@kmseng.com>",
+    "received_at": "2026-09-23T01:41:55+00:00",
+    "classify_confidence": 0.92,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 195,
+    "subject": "<**!긴급!**> LEE 비케이오션 견적의뢰서-BK2609093E",
+    "from_addr": "LUCY BAE <spare@bkocean.com>",
+    "received_at": "2026-09-23T01:40:09+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 194,
+    "subject": "[견적문의] GMS2609-0629 / MV. C TIGER / 양동혁",
+    "from_addr": "<service@gms07.co.kr>",
+    "received_at": "2026-09-23T01:37:48+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 193,
+    "subject": "엘디씨코리아 견적의뢰, \"JN260923001\", \"MSC VICTORIA\", \"HHI, 3273, IMO NO. 9932907\" - 김주희 사원",
+    "from_addr": "<general@ldc-korea.com>",
+    "received_at": "2026-09-23T01:37:25+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 192,
+    "subject": "[견적문의] GMS2609-0628 / MV. C TIGER / 양동혁",
+    "from_addr": "<service@gms07.co.kr>",
+    "received_at": "2026-09-23T01:36:00+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 조건 미충족 (신뢰도 또는 필수항목 부족) — 검토 필요",
+    "error_message": null,
+    "bucket": "review_required",
+    "tag_guess": "auto_register_gate"
+  },
+  {
+    "id": 10349,
+    "subject": "엘디씨코리아 견적의뢰, \"PN260928003\", \"\", \", IMO NO. \" - 신지원 사원",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-28T04:50:09+00:00",
+    "classify_confidence": 0.5,
+    "status_reason": null,
+    "error_message": null,
+    "bucket": "rejected_original_subject_rfqish",
+    "tag_guess": "classify_possible_fn"
+  },
+  {
+    "id": 10283,
+    "subject": "해원마린서비스 견적의뢰서 [HW-2609240040]",
+    "from_addr": "\"해원마린서비스(주)\" <hwms@hwms.kr>",
+    "received_at": "2026-09-28T00:28:49+00:00",
+    "classify_confidence": null,
+    "status_reason": "보낸 메일 — AI 분류 생략",
+    "error_message": null,
+    "bucket": "rejected_original_subject_rfqish",
+    "tag_guess": "classify_possible_fn"
+  },
+  {
+    "id": 10265,
+    "subject": "[RE]Re: 본사견적의뢰/ QKPC03PC2609250037 / QCPC03PC2609240448 DEGAS, QUOTATION: DG311",
+    "from_addr": "ACE-RMS SPARE TEAM <spare@rmsmarineservice.kr>",
+    "received_at": "2026-09-26T04:46:44+00:00",
+    "classify_confidence": 0.9,
+    "status_reason": null,
+    "error_message": null,
+    "bucket": "rejected_original_subject_rfqish",
+    "tag_guess": "classify_possible_fn"
+  },
+  {
+    "id": 218,
+    "subject": "해원마린서비스-견적의뢰서 REF NO. [HW609-7590]",
+    "from_addr": "\"해원마린서비스(주)\" <hwms@hwms.kr>",
+    "received_at": "2026-09-23T04:24:31+00:00",
+    "classify_confidence": null,
+    "status_reason": "백필 수입 — AI 미실행 (필요 시 재실행)",
+    "error_message": null,
+    "bucket": "rejected_original_subject_rfqish",
+    "tag_guess": "classify_possible_fn"
+  },
+  {
+    "id": 222,
+    "subject": "해원마린서비스 견적의뢰서 [HW-260910001]",
+    "from_addr": "\"해원마린서비스(주)\" <hwms@hwms.kr>",
+    "received_at": "2026-09-23T04:12:26+00:00",
+    "classify_confidence": null,
+    "status_reason": "백필 수입 — AI 미실행 (필요 시 재실행)",
+    "error_message": null,
+    "bucket": "rejected_original_subject_rfqish",
+    "tag_guess": "classify_possible_fn"
+  },
+  {
+    "id": 10368,
+    "subject": "< 그린펄 견적의뢰 > 2419/T1126/0322/021 Vessel Monique Glory",
+    "from_addr": "Green Pearl Trading <gpt1184@gptmarine.com>",
+    "received_at": "2026-09-28T05:17:53+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 꺼짐 — 자동후보만 저장됨",
+    "error_message": null,
+    "bucket": "ready_auto",
+    "tag_guess": "spotcheck_extraction"
+  },
+  {
+    "id": 10359,
+    "subject": "< 그린펄 견적의뢰 > 2143/T0926/0445/021 Vessel MH Highlander",
+    "from_addr": "Green Pearl Trading <gpt1184@gptmarine.com>",
+    "received_at": "2026-09-28T05:04:27+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 꺼짐 — 자동후보만 저장됨",
+    "error_message": null,
+    "bucket": "ready_auto",
+    "tag_guess": "spotcheck_extraction"
+  },
+  {
+    "id": 10358,
+    "subject": "엘디씨코리아 견적의뢰, \"GI260928005\", \"SEA AMETHYST\", \"SHI, 2413, IMO NO. 9920693\" - 심채린 사원",
+    "from_addr": "\"LDC-Korea Co., Ltd.\" <general@ldc-korea.com>",
+    "received_at": "2026-09-28T05:03:49+00:00",
+    "classify_confidence": 0.95,
+    "status_reason": "자동등록 꺼짐 — 자동후보만 저장됨",
+    "error_message": null,
+    "bucket": "ready_auto",
+    "tag_guess": "spotcheck_extraction"
+  }
+]

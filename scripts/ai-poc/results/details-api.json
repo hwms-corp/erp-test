@@ -26,7 +26,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -56,7 +56,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -86,7 +86,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -116,7 +116,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -146,7 +146,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -176,7 +176,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -206,7 +206,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -236,7 +236,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -266,7 +266,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -296,7 +296,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -326,7 +326,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -356,7 +356,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -386,7 +386,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -416,7 +416,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -446,7 +446,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -476,7 +476,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -506,7 +506,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -536,7 +536,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -566,7 +566,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 1,
     "error": null
   },
   {
@@ -596,13 +596,38 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
     "id": "gt-021",
     "language": "ko",
-    "error": "Error: extract 502"
+    "field_exact_match": 0.75,
+    "line_item_accuracy": 1,
+    "classify_ok": true,
+    "source_filled_rate": 1,
+    "fields": [
+      {
+        "name": "customer.name",
+        "ok": true
+      },
+      {
+        "name": "request.document_no",
+        "ok": false
+      },
+      {
+        "name": "request.delivery_date",
+        "ok": true
+      },
+      {
+        "name": "request.vessel",
+        "ok": true
+      }
+    ],
+    "pred_items": 2,
+    "truth_items": 2,
+    "overall_confidence": 0.95,
+    "error": null
   },
   {
     "id": "gt-022",
@@ -631,7 +656,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -661,7 +686,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -691,7 +716,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -721,7 +746,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -751,7 +776,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -781,7 +806,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -811,7 +836,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -841,7 +866,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -871,7 +896,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -901,7 +926,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -931,7 +956,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -961,7 +986,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -991,7 +1016,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1021,7 +1046,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1051,7 +1076,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1081,7 +1106,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1111,7 +1136,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1141,7 +1166,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1171,7 +1196,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1201,7 +1226,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1231,7 +1256,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1261,7 +1286,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1291,7 +1316,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1321,7 +1346,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1351,7 +1376,7 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1381,7 +1406,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.9,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1411,7 +1436,7 @@
     ],
     "pred_items": 2,
     "truth_items": 2,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
@@ -1441,12 +1466,37 @@
     ],
     "pred_items": 3,
     "truth_items": 3,
-    "overall_confidence": 0.875,
+    "overall_confidence": 0.95,
     "error": null
   },
   {
     "id": "gt-050",
     "language": "en",
-    "error": "TypeError: fetch failed"
+    "field_exact_match": 0.75,
+    "line_item_accuracy": 1,
+    "classify_ok": true,
+    "source_filled_rate": 1,
+    "fields": [
+      {
+        "name": "customer.name",
+        "ok": true
+      },
+      {
+        "name": "request.document_no",
+        "ok": false
+      },
+      {
+        "name": "request.delivery_date",
+        "ok": true
+      },
+      {
+        "name": "request.vessel",
+        "ok": true
+      }
+    ],
+    "pred_items": 2,
+    "truth_items": 2,
+    "overall_confidence": 0.95,
+    "error": null
   }
 ]
