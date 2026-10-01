@@ -551,6 +551,8 @@ export function MailInboxView() {
             auto_register_draft?: boolean;
             api_base_url?: string | null;
             api_key?: string | null;
+            match_api_base_url?: string | null;
+            match_api_key?: string | null;
           };
           if (typeof row?.auto_register_draft === 'boolean') {
             setAutoRegister(row.auto_register_draft);
@@ -565,6 +567,16 @@ export function MailInboxView() {
               ...(key ? { apiKey: key } : {}),
             });
             void refreshAiHealth();
+          }
+          if (row.match_api_base_url != null || row.match_api_key != null) {
+            const mUrl = row.match_api_base_url?.trim() || '';
+            const mKey = row.match_api_key?.trim() || '';
+            setMatchApiBaseUrl(mUrl);
+            setMatchApiKey(mKey);
+            setOrderMailMatchConfig({
+              ...(mUrl ? { apiBaseUrl: mUrl } : {}),
+              ...(mKey ? { apiKey: mKey } : {}),
+            });
           }
         },
       )
