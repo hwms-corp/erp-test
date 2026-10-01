@@ -106,13 +106,14 @@ export function filterCandidateMails(
 
 /**
  * 첨부 base64/OCR 전에 ERP가 텍스트로 후보를 줄임.
- * 15일 윈도우(~200통) 전량 첨부 다운로드를 막기 위한 1차 게이트 — mail-ai-api가 아님.
- * 상위 N통이 아니라 **점수 하한**으로 거름.
+ * 15일 윈도우(~200통) → **90점 이상 중 상위 10통**만 첨부 다운로드.
+ * 90점 이상 없으면 첨부/API 생략 + 안내 메시지.
  *
  * 점수 예시: doc_no +100, partner_email_from +50, vessel +35,
  * partner_email_body +30, partner_hint +25, contact +15, item_name +8/개
  */
-export const TEXT_PREFILTER_MIN_SCORE = 15;
+export const TEXT_PREFILTER_MIN_SCORE = 90;
+export const TEXT_PREFILTER_TOP_N = 10;
 
 function normText(s: string | null | undefined): string {
   return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -213,8 +214,8 @@ export function scoreMailTextAgainstOrder(
 }
 
 /**
- * 15일 윈도우 후보(~200) → 텍스트 점수 >= MIN 만 남김 (첨부 다운로드 전).
- * 개수 상한(topN) 없음. 미달이면 빈 목록 → unmatched.
+ * 15일 윈도우 후보(~200) → score >= MIN 중 점수↓·최신↓ 상위 topN만 (첨부 전).
+ * 기본: 90점 이상 · 최대 10통. 미달이면 빈 목록.
  */
 export function prefilterCandidatesByText(
   mails: MailMessage[],
@@ -223,10 +224,12 @@ export function prefilterCandidatesByText(
   partnerEmail: string | null,
   opts?: {
     minScore?: number;
+    topN?: number;
     attachmentFilenamesByMailId?: Map<number, string[]>;
   },
-): { kept: MailMessage[]; ranked: TextPrefilterHit[]; dropped: number; minScore: number } {
+): { kept: MailMessage[]; ranked: TextPrefilterHit[]; dropped: number; minScore: number; topN: number } {
   const minScore = opts?.minScore ?? TEXT_PREFILTER_MIN_SCORE;
+  const topN = Math.max(1, opts?.topN ?? TEXT_PREFILTER_TOP_N);
   const rankedAll = mails
     .map(m =>
       scoreMailTextAgainstOrder(
@@ -242,12 +245,14 @@ export function prefilterCandidatesByText(
       return new Date(b.mail.received_at).getTime() - new Date(a.mail.received_at).getTime();
     });
 
-  const keptHits = rankedAll.filter(h => h.score >= minScore);
+  const above = rankedAll.filter(h => h.score >= minScore);
+  const keptHits = above.slice(0, topN);
   return {
     kept: keptHits.map(h => h.mail),
     ranked: keptHits,
     dropped: Math.max(0, mails.length - keptHits.length),
     minScore,
+    topN,
   };
 }
 

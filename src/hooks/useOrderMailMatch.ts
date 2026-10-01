@@ -5,6 +5,7 @@ import {
   candidateReceivedWindow,
   prefilterCandidatesByText,
   TEXT_PREFILTER_MIN_SCORE,
+  TEXT_PREFILTER_TOP_N,
   type LearningOrderListItem,
   type OrderMailLearningMatchRow,
 } from '@/lib/orderMailMatch';
@@ -179,7 +180,7 @@ export function useOrderMailMatch() {
    * 견적 1건 매칭:
    * 1) 15일 윈도우 후보 메일 조회
    * 2) 이미 matched인 메일 제외
-   * 3) 텍스트 사전 필터(첨부 전) → 점수 ≥ MIN만
+   * 3) 텍스트 사전 필터(첨부 전) → 90점↑ 중 상위 10통
    * 4) 첨부 base64 포함 API 호출
    * 5) DB upsert
    */
@@ -275,15 +276,22 @@ export function useOrderMailMatch() {
       }
       throwIfAborted(signal);
 
-      const { kept: candidates, ranked, dropped, minScore } = prefilterCandidatesByText(
+      const { kept: candidates, ranked, dropped, minScore, topN } = prefilterCandidatesByText(
         windowCandidates,
         current.order,
         current.items,
         current.partnerEmail,
-        { minScore: TEXT_PREFILTER_MIN_SCORE, attachmentFilenamesByMailId },
+        {
+          minScore: TEXT_PREFILTER_MIN_SCORE,
+          topN: TEXT_PREFILTER_TOP_N,
+          attachmentFilenamesByMailId,
+        },
       );
 
       if (candidates.length === 0) {
+        const msg =
+          `텍스트 점수 ${minScore}점 이상인 후보 메일이 없습니다. ` +
+          `15일 윈도우 ${windowCandidates.length}통을 검사했지만 첨부 매칭을 진행하지 않습니다.`;
         const unmatchedRow = {
           order_id: orderId,
           mail_message_id: null,
@@ -294,10 +302,11 @@ export function useOrderMailMatch() {
             window: { fromIso, toIsoExclusive },
             window_count: windowCandidates.length,
             text_prefilter_min_score: minScore,
+            text_prefilter_top_n: topN,
             text_prefilter_dropped: dropped,
           },
           engine_version: null,
-          error_message: null,
+          error_message: msg.slice(0, 500),
           matched_at: new Date().toISOString(),
         };
         const { data: saved, error: upErr } = await supabase
@@ -311,11 +320,13 @@ export function useOrderMailMatch() {
             ? { ...r, match: saved as OrderMailLearningMatchRow, mail: null }
             : r
         )));
+        setError(msg);
+        setProgress('');
         return { status: 'unmatched' as const };
       }
 
       setProgress(
-        `첨부 준비 중… (텍스트 ${minScore}점↑ ${candidates.length}/${windowCandidates.length}` +
+        `첨부 준비 중… (텍스트 ${minScore}점↑ 상위 ${candidates.length}/${windowCandidates.length}` +
           (dropped > 0 ? `, ${dropped}통 스킵` : '') +
           ')',
       );
@@ -385,6 +396,7 @@ export function useOrderMailMatch() {
         window: { fromIso, toIsoExclusive },
         window_count: windowCandidates.length,
         text_prefilter_min_score: minScore,
+        text_prefilter_top_n: topN,
         text_prefilter_kept: ranked.map(h => ({
           mail_id: h.mail.id,
           score: h.score,

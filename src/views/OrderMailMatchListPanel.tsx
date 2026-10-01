@@ -66,7 +66,7 @@ export function OrderMailMatchListPanel() {
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
             목록은 빠르게만 불러옵니다. 각 행의 「매칭」으로 견적→메일 엔진을 실행하며,
             결과는 DB에 저장되어 다시 열 때 API를 돌리지 않습니다.
-            후보 메일: 견적 작성시각 직전 ~ 15일 이내 수신 · 첨부 OCR은 매칭 엔진 담당.
+            후보 메일: 견적 작성시각 직전 ~ 15일 이내 수신 · 텍스트 90점↑ 상위 10통만 첨부 OCR.
           </p>
         </div>
         <button
