@@ -79,6 +79,26 @@ export function formatBytes(n: number | null | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** 매칭 엔진용: 첨부 → base64 (실패 시 null) */
+export async function fetchGmailAttachmentBase64(
+  attachmentId: number,
+): Promise<{ content_base64: string; filename: string; mimeType: string } | null> {
+  const r = await fetchGmailAttachment(attachmentId);
+  if (!r.ok) return null;
+  const buf = await r.blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return {
+    content_base64: btoa(binary),
+    filename: r.filename,
+    mimeType: r.mimeType,
+  };
+}
+
 export function isOcrCandidate(filename: string, mime: string | null | undefined): boolean {
   const m = (mime || '').toLowerCase();
   const f = filename.toLowerCase();

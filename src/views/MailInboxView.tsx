@@ -10,6 +10,7 @@ import { OrderMailMatchListPanel } from '@/views/OrderMailMatchListPanel';
 import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
+import { setOrderMailMatchConfig } from '@/lib/orderMailMatchClient';
 import { supabase } from '@/lib/supabase';
 import type { GmailLabelRow, MailBoxId, MailMessage, MailProcessStatus } from '@/types/aiMail';
 import { formatReceivedAtKst } from '@/lib/mailTime';
@@ -311,6 +312,8 @@ export function MailInboxView() {
   const [autoRegister, setAutoRegister] = useState(false);
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [matchApiBaseUrl, setMatchApiBaseUrl] = useState('');
+  const [matchApiKey, setMatchApiKey] = useState('');
   const [aiStatus, setAiStatus] = useState<AiHealthStatus>('checking');
   const [aiDetail, setAiDetail] = useState<string | undefined>();
   const [showAiModal, setShowAiModal] = useState(false);
@@ -413,12 +416,22 @@ export function MailInboxView() {
     setAutoRegister(!!data?.auto_register_draft);
     const url = data?.api_base_url?.trim() || '';
     const key = data?.api_key?.trim() || '';
+    const matchUrl = data?.match_api_base_url?.trim() || '';
+    const matchKey = data?.match_api_key?.trim() || '';
     setApiBaseUrl(url);
     setApiKey(key);
+    setMatchApiBaseUrl(matchUrl);
+    setMatchApiKey(matchKey);
     if (url || key) {
       setAiDocConfig({
         ...(url ? { apiBaseUrl: url } : {}),
         ...(key ? { apiKey: key } : {}),
+      });
+    }
+    if (matchUrl || matchKey) {
+      setOrderMailMatchConfig({
+        ...(matchUrl ? { apiBaseUrl: matchUrl } : {}),
+        ...(matchKey ? { apiKey: matchKey } : {}),
       });
     }
     await refreshAiHealth();
@@ -575,18 +588,34 @@ export function MailInboxView() {
     setSettingsBusy(false);
   };
 
-  const saveAiConnection = async (url: string, key: string) => {
+  const saveAiConnection = async (payload: {
+    url: string;
+    key: string;
+    matchUrl: string;
+    matchKey: string;
+  }) => {
     if (!isAdmin || !user) return '관리자만 저장할 수 있습니다';
     setSettingsBusy(true);
     const { error } = await updateMailAiSettings(
-      { api_base_url: url, api_key: key },
+      {
+        api_base_url: payload.url,
+        api_key: payload.key,
+        match_api_base_url: payload.matchUrl || null,
+        match_api_key: payload.matchKey || null,
+      },
       user.id,
     );
     setSettingsBusy(false);
     if (error) return error.message || '저장 실패';
-    setApiBaseUrl(url);
-    setApiKey(key);
-    setAiDocConfig({ apiBaseUrl: url, apiKey: key });
+    setApiBaseUrl(payload.url);
+    setApiKey(payload.key);
+    setMatchApiBaseUrl(payload.matchUrl);
+    setMatchApiKey(payload.matchKey);
+    setAiDocConfig({ apiBaseUrl: payload.url, apiKey: payload.key });
+    setOrderMailMatchConfig({
+      apiBaseUrl: payload.matchUrl || payload.url,
+      apiKey: payload.matchKey || payload.key,
+    });
     await refreshAiHealth();
     return null;
   };
@@ -787,6 +816,8 @@ export function MailInboxView() {
         <AiConnectionModal
           initialUrl={apiBaseUrl}
           initialKey={apiKey}
+          initialMatchUrl={matchApiBaseUrl}
+          initialMatchKey={matchApiKey}
           canEdit={isAdmin}
           busy={settingsBusy}
           onClose={() => setShowAiModal(false)}

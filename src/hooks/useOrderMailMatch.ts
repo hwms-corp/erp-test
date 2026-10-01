@@ -1,65 +1,64 @@
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  assignOrderMailMatches,
-  buildMailCorpus,
-  type OrderMailMatchRow,
+  buildMatchOrderPayload,
+  candidateReceivedWindow,
+  type LearningOrderListItem,
+  type OrderMailLearningMatchRow,
 } from '@/lib/orderMailMatch';
+import { callOrderMailMatch } from '@/lib/orderMailMatchClient';
+import { fetchGmailAttachmentBase64 } from '@/lib/gmailAttachment';
 import type { MailAttachment, MailMessage } from '@/types/aiMail';
 import type { OrderItem, OrderWithPartner } from '@/types';
 
-const MAIL_PAGE = 1000;
+const ATT_MAX_BYTES = 8 * 1024 * 1024; // 8MB / file for match payload
+const ATT_MAX_FILES = 8;
 
-async function fetchAllInboundMails(): Promise<MailMessage[]> {
-  const all: MailMessage[] = [];
-  let from = 0;
-  for (;;) {
+async function loadItemsMap(orderIds: number[]): Promise<Map<number, OrderItem[]>> {
+  const map = new Map<number, OrderItem[]>();
+  for (let i = 0; i < orderIds.length; i += 200) {
+    const ids = orderIds.slice(i, i + 200);
     const { data, error } = await supabase
-      .from('mail_messages')
-      .select(
-        'id, gmail_message_id, gmail_thread_id, history_id, subject, from_addr, to_addr, received_at, snippet, body_text, body_html, is_rfq, classify_confidence, process_status, ai_job_id, extraction, matched_partner_id, registered_order_id, error_message, status_reason, is_starred, starred_at, is_sent, gmail_label_ids, is_read, read_at, created_at, updated_at, deleted_at',
-      )
+      .from('order_items')
+      .select('*')
+      .in('order_id', ids)
       .is('deleted_at', null)
-      .order('id', { ascending: true })
-      .range(from, from + MAIL_PAGE - 1);
+      .order('seq', { ascending: true });
     if (error) throw error;
-    const batch = (data || []) as MailMessage[];
-    all.push(...batch);
-    if (batch.length < MAIL_PAGE) break;
-    from += MAIL_PAGE;
+    for (const it of (data || []) as OrderItem[]) {
+      const list = map.get(it.order_id) || [];
+      list.push(it);
+      map.set(it.order_id, list);
+    }
   }
-  return all;
+  return map;
 }
 
-async function fetchAttachmentNamesByMail(
-  mailIds: number[],
-): Promise<Map<number, Pick<MailAttachment, 'filename'>[]>> {
-  const map = new Map<number, Pick<MailAttachment, 'filename'>[]>();
-  const chunk = 200;
-  for (let i = 0; i < mailIds.length; i += chunk) {
-    const ids = mailIds.slice(i, i + chunk);
+async function loadPartnerEmails(partnerIds: number[]): Promise<Map<number, string | null>> {
+  const map = new Map<number, string | null>();
+  for (let i = 0; i < partnerIds.length; i += 200) {
+    const ids = partnerIds.slice(i, i + 200);
     const { data, error } = await supabase
-      .from('mail_attachments')
-      .select('mail_message_id, filename')
-      .in('mail_message_id', ids);
+      .from('partners')
+      .select('id, email')
+      .in('id', ids);
     if (error) throw error;
-    for (const row of data || []) {
-      const mid = row.mail_message_id as number;
-      const list = map.get(mid) || [];
-      list.push({ filename: row.filename as string });
-      map.set(mid, list);
+    for (const p of data || []) {
+      map.set(p.id as number, (p.email as string | null) || null);
     }
   }
   return map;
 }
 
 export function useOrderMailMatch() {
-  const [rows, setRows] = useState<OrderMailMatchRow[]>([]);
+  const [rows, setRows] = useState<LearningOrderListItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<string>('');
+  const [progress, setProgress] = useState('');
 
-  const runMatch = useCallback(async () => {
+  /** 빠른 리스트: 견적 + 저장된 매칭만 (전량 메일 스캔 없음) */
+  const loadList = useCallback(async () => {
     setLoading(true);
     setError(null);
     setProgress('견적서 불러오는 중…');
@@ -76,7 +75,7 @@ export function useOrderMailMatch() {
       if (orderIds.length) {
         const { data: meta } = await supabase
           .from('orders')
-          .select('id, source, ai_review_status, ai_mail_message_id')
+          .select('id, source, ai_review_status, ai_mail_message_id, created_at')
           .in('id', orderIds);
         if (meta) {
           const map = new Map(meta.map(m => [m.id, m]));
@@ -86,72 +85,279 @@ export function useOrderMailMatch() {
               ? {
                   ...o,
                   source: m.source ?? o.source ?? 'manual',
-                  ai_review_status: m.ai_review_status ?? o.ai_review_status ?? null,
+                  ai_review_status: m.ai_review_status ?? null,
                   ai_mail_message_id: m.ai_mail_message_id ?? null,
+                  created_at: m.created_at ?? o.created_at,
                 }
               : o;
           });
         }
       }
 
-      setProgress('견적 품목 불러오는 중…');
-      const itemsByOrderId = new Map<number, OrderItem[]>();
+      setProgress('매칭 결과 불러오는 중…');
+      const matchByOrder = new Map<number, OrderMailLearningMatchRow>();
       for (let i = 0; i < orderIds.length; i += 200) {
         const ids = orderIds.slice(i, i + 200);
-        const { data: items, error: itemErr } = await supabase
-          .from('order_items')
+        const { data: matches, error: mErr } = await supabase
+          .from('order_mail_learning_matches')
           .select('*')
-          .in('order_id', ids)
-          .is('deleted_at', null)
-          .order('seq', { ascending: true });
-        if (itemErr) throw itemErr;
-        for (const it of (items || []) as OrderItem[]) {
-          const list = itemsByOrderId.get(it.order_id) || [];
-          list.push(it);
-          itemsByOrderId.set(it.order_id, list);
+          .in('order_id', ids);
+        if (mErr) throw mErr;
+        for (const row of (matches || []) as OrderMailLearningMatchRow[]) {
+          matchByOrder.set(row.order_id, row);
         }
       }
 
-      setProgress('거래처 이메일 불러오는 중…');
-      const partnerIds = [...new Set(orders.map(o => o.partner_id))];
-      const partnerEmailById = new Map<number, string | null>();
-      for (let i = 0; i < partnerIds.length; i += 200) {
-        const ids = partnerIds.slice(i, i + 200);
-        const { data: partners, error: pErr } = await supabase
-          .from('partners')
-          .select('id, email')
+      const mailIds = [...new Set(
+        [...matchByOrder.values()]
+          .map(m => m.mail_message_id)
+          .filter((id): id is number => id != null),
+      )];
+      const mailById = new Map<number, MailMessage>();
+      for (let i = 0; i < mailIds.length; i += 200) {
+        const ids = mailIds.slice(i, i + 200);
+        const { data: mails, error: mailErr } = await supabase
+          .from('mail_messages')
+          .select('*')
           .in('id', ids);
-        if (pErr) throw pErr;
-        for (const p of partners || []) {
-          partnerEmailById.set(p.id as number, (p.email as string | null) || null);
-        }
+        if (mailErr) throw mailErr;
+        for (const m of (mails || []) as MailMessage[]) mailById.set(m.id, m);
       }
 
-      setProgress('메일 불러오는 중…');
-      const mails = await fetchAllInboundMails();
-      setProgress(`첨부파일명 정리 중… (${mails.length}통)`);
-      const attMap = await fetchAttachmentNamesByMail(mails.map(m => m.id));
-      const corpora = mails.map(m => buildMailCorpus(m, attMap.get(m.id) || []));
+      setProgress('품목·거래처 정리 중…');
+      const itemsByOrder = await loadItemsMap(orderIds);
+      const partnerEmails = await loadPartnerEmails([...new Set(orders.map(o => o.partner_id))]);
 
-      setProgress('1:1 매칭 계산 중…');
-      // yield to UI
-      await new Promise(r => setTimeout(r, 0));
-      const matched = assignOrderMailMatches({
-        orders,
-        itemsByOrderId,
-        partnerEmailById,
-        corpora,
+      const list: LearningOrderListItem[] = orders.map(order => {
+        const match = matchByOrder.get(order.id) ?? null;
+        const mail = match?.mail_message_id ? mailById.get(match.mail_message_id) ?? null : null;
+        return {
+          order,
+          items: itemsByOrder.get(order.id) || [],
+          partnerEmail: partnerEmails.get(order.partner_id) ?? null,
+          match,
+          mail,
+        };
       });
-      setRows(matched);
+
+      // 비매칭(또는 미실행) 먼저? 사용자: 처음엔 비매칭. 표시는 전체, 필터는 UI
+      // 정렬: 비매칭/미실행 → 매칭, 견적일 최신
+      list.sort((a, b) => {
+        const aMatched = a.match?.status === 'matched' ? 1 : 0;
+        const bMatched = b.match?.status === 'matched' ? 1 : 0;
+        if (aMatched !== bMatched) return aMatched - bMatched;
+        return (b.order.order_date || '').localeCompare(a.order.order_date || '');
+      });
+
+      setRows(list);
       setProgress('');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '매칭 실패';
-      setError(msg);
+      setError(e instanceof Error ? e.message : '목록 로드 실패');
       setProgress('');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  return { rows, loading, error, progress, runMatch };
+  /**
+   * 견적 1건 매칭:
+   * 1) 15일 윈도우 후보 메일 조회
+   * 2) 이미 matched인 메일 제외
+   * 3) 첨부 base64 포함 API 호출
+   * 4) DB upsert
+   */
+  const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
+    setMatchingOrderId(orderId);
+    setError(null);
+    try {
+      const current = rows.find(r => r.order.id === orderId);
+      if (!current) throw new Error('목록에서 견적을 찾을 수 없습니다. 새로고침 후 다시 시도하세요.');
+
+      if (current.match?.status === 'matched' && !opts?.rematch) {
+        throw new Error('이미 매칭되어 있습니다. 다시 매칭하려면 「다시 매칭」을 누르세요.');
+      }
+
+      const { fromIso, toIsoExclusive } = candidateReceivedWindow(current.order);
+
+      // 다른 견적에 이미 매칭된 메일
+      const { data: takenRows } = await supabase
+        .from('order_mail_learning_matches')
+        .select('mail_message_id, order_id')
+        .eq('status', 'matched')
+        .not('mail_message_id', 'is', null);
+      const usedMailIds = new Set<number>();
+      for (const t of takenRows || []) {
+        if (t.order_id === orderId) continue; // rematch 시 본인 링크는 후보 가능
+        if (t.mail_message_id) usedMailIds.add(t.mail_message_id as number);
+      }
+
+      setProgress('후보 메일 조회 중…');
+      const { data: candMails, error: cErr } = await supabase
+        .from('mail_messages')
+        .select('*')
+        .is('deleted_at', null)
+        .eq('is_sent', false)
+        .gte('received_at', fromIso)
+        .lt('received_at', toIsoExclusive)
+        .order('received_at', { ascending: false })
+        .limit(200);
+      if (cErr) throw cErr;
+
+      const candidates = ((candMails || []) as MailMessage[]).filter(m => !usedMailIds.has(m.id));
+
+      if (candidates.length === 0) {
+        const unmatchedRow = {
+          order_id: orderId,
+          mail_message_id: null,
+          status: 'unmatched' as const,
+          score: null,
+          match_reasons: ['no_candidates_in_15d_window'],
+          evidence: { window: { fromIso, toIsoExclusive }, candidate_count: 0 },
+          engine_version: null,
+          error_message: null,
+          matched_at: new Date().toISOString(),
+        };
+        const { data: saved, error: upErr } = await supabase
+          .from('order_mail_learning_matches')
+          .upsert(unmatchedRow, { onConflict: 'order_id' })
+          .select('*')
+          .single();
+        if (upErr) throw upErr;
+        setRows(prev => prev.map(r => (
+          r.order.id === orderId
+            ? { ...r, match: saved as OrderMailLearningMatchRow, mail: null }
+            : r
+        )));
+        return { status: 'unmatched' as const };
+      }
+
+      setProgress(`첨부 준비 중… (후보 ${candidates.length}통)`);
+      const candPayload = [];
+      for (const mail of candidates) {
+        const { data: atts } = await supabase
+          .from('mail_attachments')
+          .select('id, filename, mime_type, size_bytes, gmail_attachment_id')
+          .eq('mail_message_id', mail.id)
+          .order('id', { ascending: true })
+          .limit(ATT_MAX_FILES);
+
+        const attachments: {
+          id: number;
+          filename: string;
+          mime_type: string | null;
+          size_bytes: number | null;
+          content_base64?: string;
+        }[] = [];
+
+        for (const a of (atts || []) as MailAttachment[]) {
+          const size = a.size_bytes ?? 0;
+          const entry = {
+            id: a.id,
+            filename: a.filename,
+            mime_type: a.mime_type,
+            size_bytes: a.size_bytes,
+          };
+          if (size > 0 && size <= ATT_MAX_BYTES && a.gmail_attachment_id) {
+            try {
+              const bin = await fetchGmailAttachmentBase64(a.id);
+              if (bin?.content_base64) {
+                attachments.push({ ...entry, content_base64: bin.content_base64 });
+                continue;
+              }
+            } catch {
+              // 메타만 전달
+            }
+          }
+          attachments.push(entry);
+        }
+
+        candPayload.push({
+          mail_id: mail.id,
+          subject: mail.subject,
+          from_addr: mail.from_addr,
+          to_addr: mail.to_addr,
+          received_at: mail.received_at,
+          body_text: mail.body_text,
+          snippet: mail.snippet,
+          attachments,
+        });
+      }
+
+      setProgress('매칭 엔진 호출 중…');
+      const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
+      const result = await callOrderMailMatch({
+        order: orderPayload,
+        candidates: candPayload,
+      });
+
+      const saveRow = {
+        order_id: orderId,
+        mail_message_id: result.status === 'matched' ? result.mail_id : null,
+        status: result.status,
+        score: result.score,
+        match_reasons: result.reasons || [],
+        evidence: result.evidence || {},
+        engine_version: result.engine_version || null,
+        error_message: null,
+        matched_at: new Date().toISOString(),
+      };
+
+      const { data: saved, error: upErr } = await supabase
+        .from('order_mail_learning_matches')
+        .upsert(saveRow, { onConflict: 'order_id' })
+        .select('*')
+        .single();
+      if (upErr) throw upErr;
+
+      let mail: MailMessage | null = null;
+      if (saved.mail_message_id) {
+        const { data: m } = await supabase
+          .from('mail_messages')
+          .select('*')
+          .eq('id', saved.mail_message_id)
+          .maybeSingle();
+        mail = (m as MailMessage) || null;
+      }
+
+      setRows(prev => prev.map(r => (
+        r.order.id === orderId
+          ? { ...r, match: saved as OrderMailLearningMatchRow, mail }
+          : r
+      )));
+      setProgress('');
+      return { status: result.status };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '매칭 실패';
+      setError(msg);
+      // failed 기록
+      try {
+        await supabase.from('order_mail_learning_matches').upsert({
+          order_id: orderId,
+          mail_message_id: null,
+          status: 'failed',
+          score: null,
+          match_reasons: [],
+          evidence: {},
+          engine_version: null,
+          error_message: msg.slice(0, 500),
+          matched_at: new Date().toISOString(),
+        }, { onConflict: 'order_id' });
+        await loadList();
+      } catch { /* ignore */ }
+      setProgress('');
+      return { status: 'failed' as const, error: msg };
+    } finally {
+      setMatchingOrderId(null);
+    }
+  }, [rows, loadList]);
+
+  return {
+    rows,
+    loading,
+    matchingOrderId,
+    error,
+    progress,
+    loadList,
+    matchOne,
+  };
 }

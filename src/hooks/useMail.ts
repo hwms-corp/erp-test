@@ -534,7 +534,7 @@ export function useMail() {
   const fetchMailAiSettings = useCallback(async () => {
     const { data, error } = await supabase
       .from('mail_ai_settings')
-      .select('id, auto_register_draft, api_base_url, api_key, updated_at, updated_by')
+      .select('id, auto_register_draft, api_base_url, api_key, match_api_base_url, match_api_key, updated_at, updated_by')
       .eq('id', 1)
       .maybeSingle();
     return {
@@ -543,6 +543,8 @@ export function useMail() {
         auto_register_draft: boolean;
         api_base_url: string | null;
         api_key: string | null;
+        match_api_base_url: string | null;
+        match_api_key: string | null;
         updated_at: string;
         updated_by: number | null;
       } | null,
@@ -555,6 +557,8 @@ export function useMail() {
       auto_register_draft?: boolean;
       api_base_url?: string | null;
       api_key?: string | null;
+      match_api_base_url?: string | null;
+      match_api_key?: string | null;
     },
     updatedBy: number,
   ) => {
@@ -566,7 +570,7 @@ export function useMail() {
         updated_by: updatedBy,
       })
       .eq('id', 1)
-      .select('id, auto_register_draft, api_base_url, api_key, updated_at, updated_by')
+      .select('id, auto_register_draft, api_base_url, api_key, match_api_base_url, match_api_key, updated_at, updated_by')
       .single();
     return {
       data: data as {
@@ -574,6 +578,8 @@ export function useMail() {
         auto_register_draft: boolean;
         api_base_url: string | null;
         api_key: string | null;
+        match_api_base_url: string | null;
+        match_api_key: string | null;
         updated_at: string;
         updated_by: number | null;
       } | null,
