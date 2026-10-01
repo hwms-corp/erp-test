@@ -101,6 +101,7 @@ export async function callOrderMailMatch(input: {
   order: MatchApiOrderPayload;
   candidates: MatchApiCandidatePayload[];
   config?: Partial<OrderMailMatchEngineConfig>;
+  signal?: AbortSignal;
 }): Promise<OrderMailMatchApiResult> {
   const cfg = {
     ...getOrderMailMatchConfig(),
@@ -115,6 +116,7 @@ export async function callOrderMailMatch(input: {
 
   const res = await fetch(`${base}/v1/order-mail-match`, {
     method: 'POST',
+    signal: input.signal,
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${cfg.apiKey}`,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Search, Link2, Unlink, ArrowRight, Loader2, RotateCcw, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Search, Link2, Unlink, ArrowRight, Loader2, RotateCcw, AlertTriangle, Ban } from 'lucide-react';
 import { useOrderMailMatch } from '@/hooks/useOrderMailMatch';
 import { Pagination, usePagination } from '@/components/Pagination';
 import { formatReceivedAtKst } from '@/lib/mailTime';
@@ -9,7 +9,7 @@ import type { LearningOrderListItem } from '@/lib/orderMailMatch';
 type Filter = 'all' | 'pending' | 'matched' | 'unmatched' | 'failed';
 
 export function OrderMailMatchListPanel() {
-  const { rows, loading, matchingOrderId, error, progress, loadList, matchOne } = useOrderMailMatch();
+  const { rows, loading, matchingOrderId, error, progress, loadList, matchOne, cancelMatch } = useOrderMailMatch();
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -123,10 +123,23 @@ export function OrderMailMatchListPanel() {
           {error}
         </div>
       )}
-      {(loading || progress) && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          {progress || '불러오는 중…'}
+      {(loading || progress || matchingOrderId != null) && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 flex flex-wrap items-center gap-2">
+          {(loading || matchingOrderId != null) && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+          <span className="flex-1 min-w-0">
+            {progress || (loading ? '불러오는 중…' : '매칭 진행 중…')}
+            {matchingOrderId != null ? ` · 견적 #${matchingOrderId}` : ''}
+          </span>
+          {matchingOrderId != null && (
+            <button
+              type="button"
+              onClick={() => cancelMatch()}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              강제 중단
+            </button>
+          )}
         </div>
       )}
 
@@ -161,6 +174,7 @@ export function OrderMailMatchListPanel() {
                       busy={matchingOrderId === r.order.id}
                       anyBusy={matchingOrderId != null}
                       onMatch={() => void matchOne(r.order.id)}
+                      onCancel={cancelMatch}
                       onRematch={() => {
                         if (!confirm('이미 저장된 매칭을 지우고 다시 실행할까요?')) return;
                         void matchOne(r.order.id, { rematch: true });
@@ -189,12 +203,14 @@ function MatchRow({
   busy,
   anyBusy,
   onMatch,
+  onCancel,
   onRematch,
 }: {
   row: LearningOrderListItem;
   busy: boolean;
   anyBusy: boolean;
   onMatch: () => void;
+  onCancel: () => void;
   onRematch: () => void;
 }) {
   const st = row.match?.status;
@@ -252,7 +268,16 @@ function MatchRow({
       </td>
       <td className="px-3 py-2.5 whitespace-nowrap text-right">
         <div className="inline-flex items-center gap-1.5">
-          {st === 'matched' ? (
+          {busy ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100"
+            >
+              <Ban className="w-3 h-3" />
+              강제 중단
+            </button>
+          ) : st === 'matched' ? (
             <>
               <Link
                 to={`/mail/learning/order-match/${row.order.id}`}
@@ -268,7 +293,7 @@ function MatchRow({
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 title="다시 매칭"
               >
-                {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                <RotateCcw className="w-3 h-3" />
               </button>
             </>
           ) : (
@@ -279,7 +304,6 @@ function MatchRow({
                 onClick={onMatch}
                 className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
               >
-                {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                 매칭
               </button>
               {(st === 'unmatched' || st === 'failed') && (
