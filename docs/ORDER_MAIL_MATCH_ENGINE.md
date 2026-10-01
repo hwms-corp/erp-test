@@ -16,9 +16,10 @@ mail-ai-api 학습용 GT 샘플을 만든다.
    - 이미 다른 견적에 `matched`로 묶인 메일 제외
 4. **텍스트 사전 필터( ERP, 첨부 전 )** — `subject` / `from` / `body` / 첨부 **파일명(메타만)**:
    - doc_no · 거래처 힌트/이메일 · vessel · 담당 · 품명 느슨 매칭으로 점수
-   - 상위 `TEXT_PREFILTER_TOP_N`(기본 20)만 남김 → **이 단계에서만** Gmail 첨부 base64 다운로드
-   - 점수가 전부 0이어도 최신순 topN 폴백 (본문은 비고 RFQ가 첨부에만 있는 경우)
-   - mail-ai-api로 200통을 보내 OCR 돌리는 방식이 아님 (느리고 비쌈)
+   - **15일 윈도우(~200통) 중 `score >= TEXT_PREFILTER_MIN_SCORE`(기본 15)** 만 통과
+   - 개수 상한(topN) 없음. 미달이면 unmatched (`no_candidates_above_text_score`)
+   - 통과분만 Gmail 첨부 base64 다운로드 → 엔진 호출
+   - mail-ai-api로 200통을 보내 OCR 돌리는 방식이 아님
 5. 결과를 DB에 저장 → 재진입 시 API 미호출
 6. 「다시 매칭」은 명시 버튼만
 
@@ -127,7 +128,7 @@ mail-ai-api 학습용 GT 샘플을 만든다.
 | 단계 | 담당 | 이유 |
 |------|------|------|
 | 15일 윈도우 + taken 제외 | **erp-test** | DB에 메일·견적이 있음 |
-| subject/body/from/파일명으로 topN | **erp-test** | 첨부 base64 다운로드·전송 전에 후보를 줄여야 함. API에 200통 보내고 OCR하면 늦음 |
+| subject/body/from/파일명으로 **점수 ≥ MIN** 통과 | **erp-test** | 첨부 base64 다운로드·전송 전에 후보를 줄여야 함. API에 200통 보내고 OCR하면 늦음 |
 | 첨부 OCR·정밀 매칭 | **mail-ai-api** | 엔진 전용. ERP가 넘긴 N통만 처리 |
 
 ## erp-test 클라이언트

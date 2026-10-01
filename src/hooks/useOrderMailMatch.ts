@@ -4,7 +4,7 @@ import {
   buildMatchOrderPayload,
   candidateReceivedWindow,
   prefilterCandidatesByText,
-  TEXT_PREFILTER_TOP_N,
+  TEXT_PREFILTER_MIN_SCORE,
   type LearningOrderListItem,
   type OrderMailLearningMatchRow,
 } from '@/lib/orderMailMatch';
@@ -179,7 +179,7 @@ export function useOrderMailMatch() {
    * 견적 1건 매칭:
    * 1) 15일 윈도우 후보 메일 조회
    * 2) 이미 matched인 메일 제외
-   * 3) 텍스트 사전 필터(첨부 전) → 상위 N통만
+   * 3) 텍스트 사전 필터(첨부 전) → 점수 ≥ MIN만
    * 4) 첨부 base64 포함 API 호출
    * 5) DB upsert
    */
@@ -275,16 +275,47 @@ export function useOrderMailMatch() {
       }
       throwIfAborted(signal);
 
-      const { kept: candidates, ranked, dropped } = prefilterCandidatesByText(
+      const { kept: candidates, ranked, dropped, minScore } = prefilterCandidatesByText(
         windowCandidates,
         current.order,
         current.items,
         current.partnerEmail,
-        { topN: TEXT_PREFILTER_TOP_N, attachmentFilenamesByMailId },
+        { minScore: TEXT_PREFILTER_MIN_SCORE, attachmentFilenamesByMailId },
       );
 
+      if (candidates.length === 0) {
+        const unmatchedRow = {
+          order_id: orderId,
+          mail_message_id: null,
+          status: 'unmatched' as const,
+          score: null,
+          match_reasons: ['no_candidates_above_text_score'],
+          evidence: {
+            window: { fromIso, toIsoExclusive },
+            window_count: windowCandidates.length,
+            text_prefilter_min_score: minScore,
+            text_prefilter_dropped: dropped,
+          },
+          engine_version: null,
+          error_message: null,
+          matched_at: new Date().toISOString(),
+        };
+        const { data: saved, error: upErr } = await supabase
+          .from('order_mail_learning_matches')
+          .upsert(unmatchedRow, { onConflict: 'order_id' })
+          .select('*')
+          .single();
+        if (upErr) throw upErr;
+        setRows(prev => prev.map(r => (
+          r.order.id === orderId
+            ? { ...r, match: saved as OrderMailLearningMatchRow, mail: null }
+            : r
+        )));
+        return { status: 'unmatched' as const };
+      }
+
       setProgress(
-        `첨부 준비 중… (텍스트 선별 ${candidates.length}/${windowCandidates.length}` +
+        `첨부 준비 중… (텍스트 ${minScore}점↑ ${candidates.length}/${windowCandidates.length}` +
           (dropped > 0 ? `, ${dropped}통 스킵` : '') +
           ')',
       );
@@ -353,7 +384,7 @@ export function useOrderMailMatch() {
       const prefilterEvidence = {
         window: { fromIso, toIsoExclusive },
         window_count: windowCandidates.length,
-        text_prefilter_top_n: TEXT_PREFILTER_TOP_N,
+        text_prefilter_min_score: minScore,
         text_prefilter_kept: ranked.map(h => ({
           mail_id: h.mail.id,
           score: h.score,
