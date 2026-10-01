@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Children, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ChevronDown, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Mail, RefreshCw, Inbox, Plug, Trash2, Check, Minus, Star, Send, RotateCcw, FolderOpen, HelpCircle, MailPlus, MailOpen, Clock, ChevronLeft, ChevronRight, ChevronDown, ArrowDownLeft, ArrowUpRight, GraduationCap } from 'lucide-react';
 import { Pagination } from '@/components/Pagination';
 import { AiConnectionModal } from '@/components/AiConnectionModal';
 import { MailGuideModal } from '@/components/MailGuideModal';
 import { MailComposeModal } from '@/components/MailComposeModal';
+import { OrderMailMatchListPanel } from '@/views/OrderMailMatchListPanel';
 import { useAuth } from '@/hooks/useAuth';
 import { useMail } from '@/hooks/useMail';
 import { checkAiDocHealth, setAiDocConfig, type AiHealthStatus } from '@/lib/aiDocClient';
@@ -329,7 +330,7 @@ export function MailInboxView() {
     }
   });
   /** left 중메뉴 접기/펼치기 — 기본 전부 열림 */
-  const [navOpen, setNavOpen] = useState({ folders: true, status: true, labels: true });
+  const [navOpen, setNavOpen] = useState({ folders: true, status: true, labels: true, learning: true });
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -352,6 +353,7 @@ export function MailInboxView() {
   const boxParam = searchParams.get('box') || searchParams.get('status') || 'latest';
   const box = boxParam as MailBoxId;
   const inTrash = box === 'trash';
+  const isLearnOrderMatch = box === 'learn_order_match';
   const showDirection = box === 'all';
   const showStarColumn = box !== 'latest';
   const showStarPriorityToggle = box === 'all' || box === 'inbox' || box === 'sent';
@@ -387,6 +389,7 @@ export function MailInboxView() {
   }, [setSearchParams]);
 
   const currentBoxLabel = useMemo(() => {
+    if (box === 'learn_order_match') return '기존 견적서 - 메일 매칭';
     const main = BOX_MAIN.find(b => b.id === box);
     if (main) return main.label;
     const st = BOX_STATUS.find(b => b.id === box);
@@ -432,6 +435,13 @@ export function MailInboxView() {
   }, [fetchMailboxCounts]);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (box === 'learn_order_match') {
+      setMails([]);
+      setTotalItems(0);
+      if (!opts?.silent) setLoading(false);
+      void loadCounts();
+      return;
+    }
     if (!opts?.silent) setLoading(true);
     const { data, count } = await fetchMails({
       box,
@@ -999,6 +1009,25 @@ export function MailInboxView() {
             })}
           </MobileScrollChipRow>
         </div>
+        <div className="space-y-1 min-w-0">
+          <p className="px-1 text-[10px] font-bold tracking-wide text-slate-400">학습샘플</p>
+          <MobileScrollChipRow ariaLabel="학습샘플">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={box === 'learn_order_match'}
+              onClick={() => setBox('learn_order_match')}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                box === 'learn_order_match'
+                  ? 'bg-teal-700 text-white'
+                  : 'bg-teal-50 text-teal-800 border border-teal-100 hover:bg-teal-100'
+              }`}
+            >
+              <GraduationCap className="w-3.5 h-3.5" />
+              기존 견적서 - 메일 매칭
+            </button>
+          </MobileScrollChipRow>
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-5 min-w-0 items-start">
@@ -1109,10 +1138,42 @@ export function MailInboxView() {
                 </div>
               )}
             </div>
+            {/* 중메뉴: 학습샘플 */}
+            <div className="rounded-xl border border-slate-100 bg-slate-50/80 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleNav('learning')}
+                aria-expanded={navOpen.learning}
+                className="w-full flex items-center gap-1.5 px-2.5 py-2 text-left hover:bg-slate-100/80 transition-colors"
+              >
+                {navOpen.learning
+                  ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                  : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-slate-500" />}
+                <GraduationCap className="w-3.5 h-3.5 shrink-0 text-teal-600" />
+                <span className="text-[12px] font-bold text-slate-800 tracking-tight">학습샘플</span>
+              </button>
+              {navOpen.learning && (
+                <div className="px-1.5 pb-1.5 border-t border-slate-100 bg-white">
+                  <TreeBranch>
+                    <NavBtn
+                      active={box === 'learn_order_match'}
+                      onClick={() => setBox('learn_order_match')}
+                      indent
+                    >
+                      <span className="min-w-0 flex-1 truncate">기존 견적서 - 메일 매칭</span>
+                    </NavBtn>
+                  </TreeBranch>
+                </div>
+              )}
+            </div>
           </nav>
         </aside>
 
         <div className="min-w-0 flex-1 w-full space-y-3">
+          {isLearnOrderMatch ? (
+            <OrderMailMatchListPanel />
+          ) : (
+          <>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-semibold text-slate-800 truncate">{currentBoxLabel}
               <span className="ml-2 text-xs font-normal text-slate-400 tabular-nums">{totalItems}건</span>
@@ -1426,6 +1487,8 @@ export function MailInboxView() {
         totalItems={totalItems}
         pageSize={PAGE_SIZE}
       />
+          </>
+          )}
         </div>
       </div>
     </motion.div>

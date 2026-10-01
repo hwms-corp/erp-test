@@ -185,6 +185,7 @@ export type MailBoxId =
   | 'unread'
   | 'starred'
   | 'trash'
+  | 'learn_order_match'
   | MailProcessStatus
   | `label:${string}`;
 

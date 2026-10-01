@@ -18,6 +18,7 @@ import { DashboardView } from '@/views/DashboardView';
 import { MailToastProvider } from '@/components/MailToastProvider';
 import { MailInboxView } from '@/views/MailInboxView';
 import { MailReviewView } from '@/views/MailReviewView';
+import { OrderMailMatchDetailView } from '@/views/OrderMailMatchDetailView';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -68,6 +69,7 @@ export default function App() {
             <Route path="/receiving" element={<ReceivingView />} />
             <Route path="/delivery" element={<DeliveryView />} />
             <Route path="/mail" element={<MailInboxView />} />
+            <Route path="/mail/learning/order-match/:orderId" element={<OrderMailMatchDetailView />} />
             <Route path="/mail/:id" element={<MailReviewView />} />
           </Route>
 
