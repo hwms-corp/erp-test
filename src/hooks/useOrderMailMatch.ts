@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   buildMatchOrderPayload,
@@ -13,6 +13,14 @@ import type { OrderItem, OrderWithPartner } from '@/types';
 
 const ATT_MAX_BYTES = 8 * 1024 * 1024; // 8MB / file for match payload
 const ATT_MAX_FILES = 8;
+
+function throwIfAborted(signal: AbortSignal) {
+  if (signal.aborted) {
+    const err = new Error('사용자가 매칭을 중단했습니다');
+    err.name = 'AbortError';
+    throw err;
+  }
+}
 
 async function loadItemsMap(orderIds: number[]): Promise<Map<number, OrderItem[]>> {
   const map = new Map<number, OrderItem[]>();
@@ -56,6 +64,7 @@ export function useOrderMailMatch() {
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
 
   /** 빠른 리스트: 견적 + 저장된 매칭만 (전량 메일 스캔 없음) */
   const loadList = useCallback(async () => {
@@ -159,6 +168,11 @@ export function useOrderMailMatch() {
     }
   }, []);
 
+  const cancelMatch = useCallback(() => {
+    abortRef.current?.abort();
+    setProgress('중단 요청 중…');
+  }, []);
+
   /**
    * 견적 1건 매칭:
    * 1) 15일 윈도우 후보 메일 조회
@@ -167,6 +181,11 @@ export function useOrderMailMatch() {
    * 4) DB upsert
    */
   const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const { signal } = ac;
+
     setMatchingOrderId(orderId);
     setError(null);
     try {
@@ -185,6 +204,7 @@ export function useOrderMailMatch() {
         .select('mail_message_id, order_id')
         .eq('status', 'matched')
         .not('mail_message_id', 'is', null);
+      throwIfAborted(signal);
       const usedMailIds = new Set<number>();
       for (const t of takenRows || []) {
         if (t.order_id === orderId) continue; // rematch 시 본인 링크는 후보 가능
@@ -202,6 +222,7 @@ export function useOrderMailMatch() {
         .order('received_at', { ascending: false })
         .limit(200);
       if (cErr) throw cErr;
+      throwIfAborted(signal);
 
       const candidates = ((candMails || []) as MailMessage[]).filter(m => !usedMailIds.has(m.id));
 
@@ -233,7 +254,9 @@ export function useOrderMailMatch() {
 
       setProgress(`첨부 준비 중… (후보 ${candidates.length}통)`);
       const candPayload = [];
+      let attDone = 0;
       for (const mail of candidates) {
+        throwIfAborted(signal);
         const { data: atts } = await supabase
           .from('mail_attachments')
           .select('id, filename, mime_type, size_bytes, gmail_attachment_id')
@@ -250,6 +273,7 @@ export function useOrderMailMatch() {
         }[] = [];
 
         for (const a of (atts || []) as MailAttachment[]) {
+          throwIfAborted(signal);
           const size = a.size_bytes ?? 0;
           const entry = {
             id: a.id,
@@ -260,11 +284,13 @@ export function useOrderMailMatch() {
           if (size > 0 && size <= ATT_MAX_BYTES && a.gmail_attachment_id) {
             try {
               const bin = await fetchGmailAttachmentBase64(a.id);
+              throwIfAborted(signal);
               if (bin?.content_base64) {
                 attachments.push({ ...entry, content_base64: bin.content_base64 });
                 continue;
               }
-            } catch {
+            } catch (e) {
+              if (e instanceof Error && e.name === 'AbortError') throw e;
               // 메타만 전달
             }
           }
@@ -281,14 +307,20 @@ export function useOrderMailMatch() {
           snippet: mail.snippet,
           attachments,
         });
+        attDone += 1;
+        if (attDone % 5 === 0 || attDone === candidates.length) {
+          setProgress(`첨부 준비 중… (${attDone}/${candidates.length})`);
+        }
       }
 
-      setProgress('매칭 엔진 호출 중…');
+      setProgress('매칭 엔진 호출 중… (오래 걸리면 「강제 중단」)');
       const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
       const result = await callOrderMailMatch({
         order: orderPayload,
         candidates: candPayload,
+        signal,
       });
+      throwIfAborted(signal);
 
       const saveRow = {
         order_id: orderId,
@@ -327,6 +359,14 @@ export function useOrderMailMatch() {
       setProgress('');
       return { status: result.status };
     } catch (e) {
+      const aborted =
+        (e instanceof Error && (e.name === 'AbortError' || e.message.includes('중단'))) ||
+        (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError');
+      if (aborted) {
+        setError('매칭을 강제 중단했습니다. 다시 「매칭」으로 재시도할 수 있습니다.');
+        setProgress('');
+        return { status: 'cancelled' as const };
+      }
       const msg = e instanceof Error ? e.message : '매칭 실패';
       setError(msg);
       // failed 기록
@@ -347,6 +387,7 @@ export function useOrderMailMatch() {
       setProgress('');
       return { status: 'failed' as const, error: msg };
     } finally {
+      if (abortRef.current === ac) abortRef.current = null;
       setMatchingOrderId(null);
     }
   }, [rows, loadList]);
@@ -359,5 +400,6 @@ export function useOrderMailMatch() {
     progress,
     loadList,
     matchOne,
+    cancelMatch,
   };
 }
