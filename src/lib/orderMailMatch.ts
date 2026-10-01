@@ -104,6 +104,148 @@ export function filterCandidateMails(
   });
 }
 
+/**
+ * 첨부 base64/OCR 전에 ERP가 텍스트로 후보를 줄임.
+ * ~200통 전량 첨부 다운로드를 막기 위한 1차 게이트 — mail-ai-api가 아님.
+ */
+export const TEXT_PREFILTER_TOP_N = 20;
+
+function normText(s: string | null | undefined): string {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function includesLoose(hay: string, needle: string): boolean {
+  const n = normText(needle);
+  if (!n || n.length < 2) return false;
+  return hay.includes(n);
+}
+
+export type TextPrefilterHit = {
+  mail: MailMessage;
+  score: number;
+  reasons: string[];
+};
+
+/**
+ * subject/from/body/snippet(+첨부 파일명)만으로 견적 힌트와 느슨히 점수.
+ * OCR·정밀 매칭은 엔진 몫.
+ */
+export function scoreMailTextAgainstOrder(
+  mail: MailMessage,
+  order: Pick<OrderWithPartner, 'doc_no' | 'partner_name' | 'contact_person' | 'vessel'>,
+  items: Pick<OrderItem, 'name'>[],
+  partnerEmail: string | null,
+  attachmentFilenames?: string[],
+): TextPrefilterHit {
+  const hay = normText(
+    [
+      mail.subject,
+      mail.from_addr,
+      mail.to_addr,
+      mail.snippet,
+      mail.body_text,
+      ...(attachmentFilenames || []),
+    ].join('\n'),
+  );
+  const fromHay = normText(mail.from_addr);
+  let score = 0;
+  const reasons: string[] = [];
+
+  const docNo = (order.doc_no || '').trim();
+  if (docNo && includesLoose(hay, docNo)) {
+    score += 100;
+    reasons.push('doc_no');
+  }
+
+  const email = (partnerEmail || '').trim().toLowerCase();
+  if (email && fromHay.includes(email)) {
+    score += 50;
+    reasons.push('partner_email_from');
+  } else if (email && hay.includes(email)) {
+    score += 30;
+    reasons.push('partner_email_body');
+  }
+
+  const hints = buildPartnerNameHints(order.partner_name, partnerEmail);
+  for (const h of hints) {
+    if (h.includes('@')) continue; // 이메일은 위에서 처리
+    if (includesLoose(hay, h) || includesLoose(fromHay, h)) {
+      score += 25;
+      reasons.push('partner_hint');
+      break;
+    }
+  }
+
+  const vessel = (order.vessel || '').trim();
+  if (vessel.length >= 3 && includesLoose(hay, vessel)) {
+    score += 35;
+    reasons.push('vessel');
+  }
+
+  const contact = (order.contact_person || '').trim();
+  if (contact.length >= 2 && includesLoose(hay, contact)) {
+    score += 15;
+    reasons.push('contact');
+  }
+
+  // 품명 토큰(앞 몇 개만) — 너무 짧은 일반어는 스킵
+  let itemHits = 0;
+  for (const it of items.slice(0, 12)) {
+    const name = (it.name || '').trim();
+    if (name.length < 4) continue;
+    // 너무 긴 품명은 앞 구간만
+    const token = name.length > 40 ? name.slice(0, 40) : name;
+    if (includesLoose(hay, token)) {
+      itemHits += 1;
+      if (itemHits >= 3) break;
+    }
+  }
+  if (itemHits > 0) {
+    score += itemHits * 8;
+    reasons.push(`item_name×${itemHits}`);
+  }
+
+  return { mail, score, reasons };
+}
+
+/**
+ * 15일 윈도우 후보 → 텍스트 점수 상위 topN만 남김 (첨부 다운로드 전).
+ * 점수가 전부 0이어도 최신순 topN은 통과(첨부만 RFQ인 케이스 대비 폴백).
+ */
+export function prefilterCandidatesByText(
+  mails: MailMessage[],
+  order: Pick<OrderWithPartner, 'doc_no' | 'partner_name' | 'contact_person' | 'vessel'>,
+  items: Pick<OrderItem, 'name'>[],
+  partnerEmail: string | null,
+  opts?: {
+    topN?: number;
+    attachmentFilenamesByMailId?: Map<number, string[]>;
+  },
+): { kept: MailMessage[]; ranked: TextPrefilterHit[]; dropped: number } {
+  const topN = opts?.topN ?? TEXT_PREFILTER_TOP_N;
+  const ranked = mails
+    .map(m =>
+      scoreMailTextAgainstOrder(
+        m,
+        order,
+        items,
+        partnerEmail,
+        opts?.attachmentFilenamesByMailId?.get(m.id),
+      ),
+    )
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return new Date(b.mail.received_at).getTime() - new Date(a.mail.received_at).getTime();
+    });
+
+  const keptHits = ranked.slice(0, Math.max(1, topN));
+  return {
+    kept: keptHits.map(h => h.mail),
+    ranked: keptHits,
+    dropped: Math.max(0, mails.length - keptHits.length),
+  };
+}
+
 export type LearningMatchStatus = 'matched' | 'unmatched' | 'failed';
 
 export interface OrderMailLearningMatchRow {

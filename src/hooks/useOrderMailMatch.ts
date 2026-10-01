@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase';
 import {
   buildMatchOrderPayload,
   candidateReceivedWindow,
+  prefilterCandidatesByText,
+  TEXT_PREFILTER_TOP_N,
   type LearningOrderListItem,
   type OrderMailLearningMatchRow,
 } from '@/lib/orderMailMatch';
@@ -177,8 +179,9 @@ export function useOrderMailMatch() {
    * 견적 1건 매칭:
    * 1) 15일 윈도우 후보 메일 조회
    * 2) 이미 matched인 메일 제외
-   * 3) 첨부 base64 포함 API 호출
-   * 4) DB upsert
+   * 3) 텍스트 사전 필터(첨부 전) → 상위 N통만
+   * 4) 첨부 base64 포함 API 호출
+   * 5) DB upsert
    */
   const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
     abortRef.current?.abort();
@@ -224,9 +227,9 @@ export function useOrderMailMatch() {
       if (cErr) throw cErr;
       throwIfAborted(signal);
 
-      const candidates = ((candMails || []) as MailMessage[]).filter(m => !usedMailIds.has(m.id));
+      const windowCandidates = ((candMails || []) as MailMessage[]).filter(m => !usedMailIds.has(m.id));
 
-      if (candidates.length === 0) {
+      if (windowCandidates.length === 0) {
         const unmatchedRow = {
           order_id: orderId,
           mail_message_id: null,
@@ -252,7 +255,39 @@ export function useOrderMailMatch() {
         return { status: 'unmatched' as const };
       }
 
-      setProgress(`첨부 준비 중… (후보 ${candidates.length}통)`);
+      // 첨부 다운로드 전: subject/from/body + 첨부파일명(메타만)으로 상위 N통 선별
+      setProgress(`텍스트 사전 필터 중… (윈도우 ${windowCandidates.length}통)`);
+      const attachmentFilenamesByMailId = new Map<number, string[]>();
+      const windowIds = windowCandidates.map(m => m.id);
+      for (let i = 0; i < windowIds.length; i += 200) {
+        throwIfAborted(signal);
+        const chunk = windowIds.slice(i, i + 200);
+        const { data: nameRows } = await supabase
+          .from('mail_attachments')
+          .select('mail_message_id, filename')
+          .in('mail_message_id', chunk);
+        for (const row of nameRows || []) {
+          const mid = row.mail_message_id as number;
+          const list = attachmentFilenamesByMailId.get(mid) || [];
+          list.push(String(row.filename || ''));
+          attachmentFilenamesByMailId.set(mid, list);
+        }
+      }
+      throwIfAborted(signal);
+
+      const { kept: candidates, ranked, dropped } = prefilterCandidatesByText(
+        windowCandidates,
+        current.order,
+        current.items,
+        current.partnerEmail,
+        { topN: TEXT_PREFILTER_TOP_N, attachmentFilenamesByMailId },
+      );
+
+      setProgress(
+        `첨부 준비 중… (텍스트 선별 ${candidates.length}/${windowCandidates.length}` +
+          (dropped > 0 ? `, ${dropped}통 스킵` : '') +
+          ')',
+      );
       const candPayload = [];
       let attDone = 0;
       for (const mail of candidates) {
@@ -315,6 +350,17 @@ export function useOrderMailMatch() {
 
       setProgress('매칭 엔진 호출 중… (오래 걸리면 「강제 중단」)');
       const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
+      const prefilterEvidence = {
+        window: { fromIso, toIsoExclusive },
+        window_count: windowCandidates.length,
+        text_prefilter_top_n: TEXT_PREFILTER_TOP_N,
+        text_prefilter_kept: ranked.map(h => ({
+          mail_id: h.mail.id,
+          score: h.score,
+          reasons: h.reasons,
+        })),
+        text_prefilter_dropped: dropped,
+      };
       const result = await callOrderMailMatch({
         order: orderPayload,
         candidates: candPayload,
@@ -328,7 +374,10 @@ export function useOrderMailMatch() {
         status: result.status,
         score: result.score,
         match_reasons: result.reasons || [],
-        evidence: result.evidence || {},
+        evidence: {
+          ...(result.evidence && typeof result.evidence === 'object' ? result.evidence : {}),
+          erp_text_prefilter: prefilterEvidence,
+        },
         engine_version: result.engine_version || null,
         error_message: null,
         matched_at: new Date().toISOString(),

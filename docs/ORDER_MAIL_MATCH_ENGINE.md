@@ -10,12 +10,17 @@ mail-ai-api 학습용 GT 샘플을 만든다.
 ## ERP 동작
 1. 학습샘플 메뉴: 견적 리스트만 로드 + `order_mail_learning_matches` 조인 (기본 비매칭)
 2. 행별 「매칭」클릭 시에만 API 호출
-3. 후보 메일 1차 필터( ERP ):
+3. 후보 메일 1차 필터( **ERP** ):
    - `is_sent = false`, 삭제 아님
    - `order.created_at - 15일 ≤ received_at < order.created_at`
    - 이미 다른 견적에 `matched`로 묶인 메일 제외
-4. 결과를 DB에 저장 → 재진입 시 API 미호출
-5. 「다시 매칭」은 명시 버튼만
+4. **텍스트 사전 필터( ERP, 첨부 전 )** — `subject` / `from` / `body` / 첨부 **파일명(메타만)**:
+   - doc_no · 거래처 힌트/이메일 · vessel · 담당 · 품명 느슨 매칭으로 점수
+   - 상위 `TEXT_PREFILTER_TOP_N`(기본 20)만 남김 → **이 단계에서만** Gmail 첨부 base64 다운로드
+   - 점수가 전부 0이어도 최신순 topN 폴백 (본문은 비고 RFQ가 첨부에만 있는 경우)
+   - mail-ai-api로 200통을 보내 OCR 돌리는 방식이 아님 (느리고 비쌈)
+5. 결과를 DB에 저장 → 재진입 시 API 미호출
+6. 「다시 매칭」은 명시 버튼만
 
 ## 설정
 `mail_ai_settings.match_api_base_url` / `match_api_key`  
@@ -111,11 +116,19 @@ mail-ai-api 학습용 GT 샘플을 만든다.
 후보가 없거나 확신 부족 시 `unmatched` + `mail_id: null`.
 
 ## 엔진 요구사항
-1. **첨부 필수**: PDF / xlsx / docx / 이미지 OCR·텍스트 추출 후 비교
+1. **첨부 필수**: PDF / xlsx / docx / 이미지 OCR·텍스트 추출 후 비교  
+   (ERP가 이미 텍스트로 줄인 후보만 받음 — 엔진 쪽 추가 텍스트 프리필터 불필요)
 2. **금액·단가 제외** (견적 후입력)
 3. **거래처 한·영 동일음/통용표기** 동등 처리  
    (예: 메일 `Korea Marine Service` ↔ ERP `코리아마린서비스`)
 4. 입력 후보만 대상으로 하고, ERP가 준 15일 윈도우 밖은 보지 않음
+
+## 역할 분담 (텍스트 사전 필터)
+| 단계 | 담당 | 이유 |
+|------|------|------|
+| 15일 윈도우 + taken 제외 | **erp-test** | DB에 메일·견적이 있음 |
+| subject/body/from/파일명으로 topN | **erp-test** | 첨부 base64 다운로드·전송 전에 후보를 줄여야 함. API에 200통 보내고 OCR하면 늦음 |
+| 첨부 OCR·정밀 매칭 | **mail-ai-api** | 엔진 전용. ERP가 넘긴 N통만 처리 |
 
 ## erp-test 클라이언트
 `src/lib/orderMailMatchClient.ts` → `POST {match_api_base_url}/v1/order-mail-match`
