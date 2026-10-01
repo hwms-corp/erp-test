@@ -89,6 +89,18 @@ export function AiConnectionModal({
       setErr('분류 API Key를 입력하세요');
       return;
     }
+    if (!matchUrl.trim()) {
+      setErr('학습매칭(order-mail-match) API URL을 입력하세요');
+      return;
+    }
+    if (!matchKey.trim()) {
+      setErr('학습매칭(order-mail-match) API Key를 입력하세요 — 분류 키와 다른 엔진 키여야 합니다');
+      return;
+    }
+    if (matchKey.trim() === key.trim()) {
+      setErr('학습매칭 Key는 분류 Key와 달라야 합니다. order-mail-match 엔진용 키를 발급해 넣으세요.');
+      return;
+    }
     const msg = await onSave({
       url: url.trim().replace(/\/$/, ''),
       key: key.trim(),
@@ -103,8 +115,10 @@ export function AiConnectionModal({
     <Modal title="AI 연동 (mail-ai-api)" onClose={onClose}>
       <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
         <p className="text-xs text-slate-500 leading-relaxed">
-          <strong>분류/추출</strong> API와 <strong>견적→메일 학습매칭</strong> 엔진을 분리해 저장합니다.
-          매칭 엔진은 첨부 OCR이 필요하며 mail-ai-api Cloud Agent에서 배포합니다.
+          한 회사(tenant)에서 <strong>엔진(키) 2개</strong>를 씁니다.
+          메일함 분류/추출 = <code className="text-[11px]">mail-ai-api</code> 키,
+          학습샘플 매칭 = <code className="text-[11px]">order-mail-match</code> 키.
+          서로 다른 키를 넣어야 합니다.
         </p>
 
         <div className="rounded-xl border border-slate-200 p-3 space-y-3">
@@ -144,7 +158,8 @@ export function AiConnectionModal({
         <div className="rounded-xl border border-teal-200 bg-teal-50/30 p-3 space-y-3">
           <p className="text-xs font-bold text-teal-900">2) 학습매칭 엔진 (견적 → 메일)</p>
           <p className="text-[11px] text-teal-800/80 leading-relaxed">
-            `POST /v1/order-mail-match` · 첨부 OCR 포함. 비워 두면 분류 API와 동일 호스트/키를 임시 사용합니다.
+            `POST /v1/order-mail-match` · 첨부 OCR 포함.
+            <strong> 분류 API Key와 다른 order-mail-match 엔진 키</strong>를 넣으세요. (비워 두거나 동일 키 사용 불가)
           </p>
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-slate-700">Match API Base URL</span>

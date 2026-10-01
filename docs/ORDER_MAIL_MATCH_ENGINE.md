@@ -19,7 +19,29 @@ mail-ai-api 학습용 GT 샘플을 만든다.
 
 ## 설정
 `mail_ai_settings.match_api_base_url` / `match_api_key`  
-(분류용 `api_base_url` / `api_key` 와 **분리**)
+(분류용 `api_base_url` / `api_key` 와 **분리** — 동일 키 폴백 없음)
+
+## erp-test 연동 위치 (mail-ai-api 에이전트용)
+
+| 역할 | 경로 |
+|------|------|
+| 스펙 문서 | `docs/ORDER_MAIL_MATCH_ENGINE.md` |
+| 학습매칭 API 클라이언트 | `src/lib/orderMailMatchClient.ts` → `POST {match_api}/v1/order-mail-match` |
+| 후보 필터·한영 힌트 | `src/lib/orderMailMatch.ts` |
+| 목록/건별 매칭 훅 | `src/hooks/useOrderMailMatch.ts` |
+| 학습샘플 UI | `src/views/OrderMailMatchListPanel.tsx`, `OrderMailMatchDetailView.tsx` |
+| AI 연동 UI (키 2개) | `src/components/AiConnectionModal.tsx` |
+| 설정 로드/저장 | `src/hooks/useMail.ts` (`fetchMailAiSettings` / `updateMailAiSettings`) |
+| DB | `mail_ai_settings.api_*` = 분류, `mail_ai_settings.match_api_*` = 학습매칭 |
+| 마이그레이션 | `supabase/migrations/028_order_mail_learning_matches.sql` |
+| 메일함 분류 호출 | `src/lib/aiDocClient.ts` + `src/hooks/useMail.ts` (`classify`/`extract`) — **여기 건드리지 말 것** |
+
+환경변수(빌드 폴백, 분류만):
+- `VITE_AI_DOC_API_URL` / `VITE_AI_DOC_API_KEY`
+
+런타임 DB:
+- 분류: `api_base_url`, `api_key`
+- 학습매칭: `match_api_base_url`, `match_api_key`
 
 ## API (제안)
 

@@ -624,9 +624,10 @@ export function MailInboxView() {
     setMatchApiBaseUrl(payload.matchUrl);
     setMatchApiKey(payload.matchKey);
     setAiDocConfig({ apiBaseUrl: payload.url, apiKey: payload.key });
+    // 학습매칭은 별도 엔진 키만 — 분류 키로 절대 폴백하지 않음
     setOrderMailMatchConfig({
-      apiBaseUrl: payload.matchUrl || payload.url,
-      apiKey: payload.matchKey || payload.key,
+      apiBaseUrl: payload.matchUrl,
+      apiKey: payload.matchKey,
     });
     await refreshAiHealth();
     return null;

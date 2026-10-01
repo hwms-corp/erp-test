@@ -1,4 +1,3 @@
-import { getAiDocConfig } from '@/lib/aiDocClient';
 import type { MatchApiCandidatePayload, MatchApiOrderPayload } from '@/lib/orderMailMatch';
 
 export type OrderMailMatchEngineConfig = {
@@ -17,13 +16,16 @@ export function setOrderMailMatchConfig(partial: Partial<OrderMailMatchEngineCon
 }
 
 export function getOrderMailMatchConfig(): OrderMailMatchEngineConfig {
-  if (matchRuntime?.apiBaseUrl && matchRuntime.apiKey) return { ...matchRuntime };
-  // fallback: 분류 API와 동일 호스트를 임시로 쓸 수 있으나, 키/URL은 설정 분리 권장
-  const fallback = getAiDocConfig();
+  // 분류(mail-ai-api) 키로 폴백하지 않음 — 학습샘플은 order-mail-match 전용 키만 사용
   return {
-    apiBaseUrl: matchRuntime?.apiBaseUrl || fallback.apiBaseUrl,
-    apiKey: matchRuntime?.apiKey || fallback.apiKey,
+    apiBaseUrl: (matchRuntime?.apiBaseUrl || '').trim().replace(/\/$/, ''),
+    apiKey: (matchRuntime?.apiKey || '').trim(),
   };
+}
+
+export function isOrderMailMatchConfigured(): boolean {
+  const c = getOrderMailMatchConfig();
+  return Boolean(c.apiBaseUrl && c.apiKey);
 }
 
 export type OrderMailMatchApiResult = {
@@ -77,7 +79,9 @@ export async function callOrderMailMatch(input: {
   };
   const base = cfg.apiBaseUrl.replace(/\/$/, '');
   if (!base || !cfg.apiKey) {
-    throw new Error('견적→메일 매칭 API URL/Key가 설정되지 않았습니다. AI 연동에서 Match API를 저장하세요.');
+    throw new Error(
+      '학습샘플 매칭용 order-mail-match API URL/Key가 없습니다. AI 연동 → 「학습매칭 엔진」에 별도 키를 저장하세요. (메일 분류 키와 다름)',
+    );
   }
 
   const res = await fetch(`${base}/v1/order-mail-match`, {
