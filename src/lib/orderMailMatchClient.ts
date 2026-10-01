@@ -46,21 +46,50 @@ export async function checkOrderMailMatchHealth(opts?: {
   const base = (opts?.apiBaseUrl ?? getOrderMailMatchConfig().apiBaseUrl).replace(/\/$/, '');
   const key = opts?.apiKey ?? getOrderMailMatchConfig().apiKey;
   if (!base) return { ok: false, detail: '매칭 API URL 없음' };
+  if (!key) return { ok: false, detail: '매칭 API Key 없음' };
   const ctrl = new AbortController();
-  const t = window.setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? 8000);
+  const t = window.setTimeout(() => ctrl.abort(), opts?.timeoutMs ?? 10000);
   try {
     const healthRes = await fetch(`${base}/health`, { signal: ctrl.signal });
     if (!healthRes.ok) return { ok: false, detail: `health ${healthRes.status}` };
-    // 엔드포인트 존재 확인 (없으면 404 → 엔진 미배포로 안내)
+
+    // 키 유효성: 최소 payload로 POST — 401/403이면 키 오류, 그 외(400/422/200)면 엔진·키 도달
     const probe = await fetch(`${base}/v1/order-mail-match`, {
-      method: 'OPTIONS',
+      method: 'POST',
       signal: ctrl.signal,
-      headers: { authorization: `Bearer ${key}` },
-    }).catch(() => null);
-    if (probe && (probe.status === 401 || probe.status === 403)) {
-      return { ok: false, detail: 'API Key 인증 실패' };
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        order: {
+          id: 0,
+          doc_no: '__health__',
+          order_date: '1970-01-01',
+          created_at: new Date().toISOString(),
+          partner_name: '__health__',
+          partner_name_hints: [],
+          partner_email: null,
+          contact_person: null,
+          vessel: null,
+          items: [],
+        },
+        candidates: [],
+        options: { exclude_prices: true, partner_ko_en_equivalent: true, lookback_days: 15 },
+      }),
+    });
+
+    if (probe.status === 401 || probe.status === 403) {
+      return { ok: false, detail: 'API Key 인증 실패 (order-mail-match 키 확인)' };
     }
-    return { ok: true, detail: '매칭 엔진 호스트 응답 OK (엔드포인트는 배포 후 사용)' };
+    if (probe.status === 404) {
+      return { ok: false, detail: '/v1/order-mail-match 없음 — 엔진 미배포' };
+    }
+    // 200 matched/unmatched, 400 validation 등 → 호스트+키+엔드포인트 OK
+    if (probe.status >= 500) {
+      return { ok: false, detail: `서버 오류 ${probe.status}` };
+    }
+    return { ok: true, detail: `연동 OK (HTTP ${probe.status})` };
   } catch (e) {
     return { ok: false, detail: e instanceof Error ? e.message : '연결 실패' };
   } finally {

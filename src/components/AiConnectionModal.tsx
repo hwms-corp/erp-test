@@ -20,6 +20,12 @@ type Props = {
   }) => Promise<string | null>;
 };
 
+type TestState = {
+  testing: boolean;
+  ok: boolean | null;
+  msg: string | null;
+};
+
 export function AiConnectionModal({
   initialUrl,
   initialKey,
@@ -38,9 +44,8 @@ export function AiConnectionModal({
   const [matchKey, setMatchKey] = useState(initialMatchKey || matchFallback.apiKey);
   const [showKey, setShowKey] = useState(false);
   const [showMatchKey, setShowMatchKey] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testMsg, setTestMsg] = useState<string | null>(null);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [classifyTest, setClassifyTest] = useState<TestState>({ testing: false, ok: null, msg: null });
+  const [matchTest, setMatchTest] = useState<TestState>({ testing: false, ok: null, msg: null });
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,24 +64,34 @@ export function AiConnectionModal({
     matchFallback.apiKey,
   ]);
 
-  const runTest = async () => {
-    setTesting(true);
-    setTestMsg(null);
-    setTestOk(null);
+  const anyTesting = classifyTest.testing || matchTest.testing;
+
+  const runClassifyTest = async () => {
+    setClassifyTest({ testing: true, ok: null, msg: null });
     const r = await checkAiDocHealth({ apiBaseUrl: url, apiKey: key });
+    if (r.status === 'online') {
+      setClassifyTest({ testing: false, ok: true, msg: '연결 성공 — health + API Key 인증 OK (mail-ai-api)' });
+    } else if (r.status === 'unauthorized') {
+      setClassifyTest({ testing: false, ok: false, msg: `API Key가 올바르지 않습니다. (${r.detail || ''})` });
+    } else {
+      setClassifyTest({ testing: false, ok: false, msg: `연결 실패: ${r.detail || r.status}` });
+    }
+  };
+
+  const runMatchTest = async () => {
+    setMatchTest({ testing: true, ok: null, msg: null });
+    if (!matchUrl.trim() || !matchKey.trim()) {
+      setMatchTest({ testing: false, ok: false, msg: 'Match API URL과 Key를 입력하세요' });
+      return;
+    }
     const m = await checkOrderMailMatchHealth({ apiBaseUrl: matchUrl, apiKey: matchKey });
-    setTesting(false);
-    const classifyOk = r.status === 'online';
-    const parts = [
-      classifyOk
-        ? '분류 API OK'
-        : r.status === 'unauthorized'
-          ? '분류 API Key 오류'
-          : `분류 API 실패(${r.detail || r.status})`,
-      m.ok ? `매칭 엔진 OK (${m.detail})` : `매칭 엔진: ${m.detail}`,
-    ];
-    setTestOk(classifyOk);
-    setTestMsg(parts.join(' · '));
+    setMatchTest({
+      testing: false,
+      ok: m.ok,
+      msg: m.ok
+        ? `연결 성공 — order-mail-match 엔진 OK (${m.detail})`
+        : `연결 실패: ${m.detail}`,
+    });
   };
 
   const save = async () => {
@@ -112,13 +127,13 @@ export function AiConnectionModal({
   };
 
   return (
-    <Modal title="AI 연동 (mail-ai-api)" onClose={onClose}>
+    <Modal title="AI 연동 (엔진별 키)" onClose={onClose}>
       <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
         <p className="text-xs text-slate-500 leading-relaxed">
           한 회사(tenant)에서 <strong>엔진(키) 2개</strong>를 씁니다.
           메일함 분류/추출 = <code className="text-[11px]">mail-ai-api</code> 키,
           학습샘플 매칭 = <code className="text-[11px]">order-mail-match</code> 키.
-          서로 다른 키를 넣어야 합니다.
+          서로 다른 키를 넣어야 합니다. 연결 테스트는 엔진마다 따로 하세요.
         </p>
 
         <div className="rounded-xl border border-slate-200 p-3 space-y-3">
@@ -134,7 +149,7 @@ export function AiConnectionModal({
             />
           </label>
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-slate-700">API Key</span>
+            <span className="text-xs font-medium text-slate-700">API Key (mail-ai-api)</span>
             <div className="flex gap-2">
               <input
                 type={showKey ? 'text' : 'password'}
@@ -153,31 +168,54 @@ export function AiConnectionModal({
               </button>
             </div>
           </label>
+          {classifyTest.msg && (
+            <div
+              className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs ${
+                classifyTest.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
+              }`}
+            >
+              {classifyTest.ok
+                ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+              <span>{classifyTest.msg}</span>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void runClassifyTest()}
+              disabled={classifyTest.testing || busy}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
+            >
+              {classifyTest.testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+              분류 엔진 테스트
+            </button>
+          </div>
         </div>
 
         <div className="rounded-xl border border-teal-200 bg-teal-50/30 p-3 space-y-3">
           <p className="text-xs font-bold text-teal-900">2) 학습매칭 엔진 (견적 → 메일)</p>
           <p className="text-[11px] text-teal-800/80 leading-relaxed">
             `POST /v1/order-mail-match` · 첨부 OCR 포함.
-            <strong> 분류 API Key와 다른 order-mail-match 엔진 키</strong>를 넣으세요. (비워 두거나 동일 키 사용 불가)
+            <strong> 분류 API Key와 다른 order-mail-match 엔진 키</strong>를 넣으세요.
           </p>
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-slate-700">Match API Base URL</span>
             <input
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:bg-slate-50 bg-white"
-              placeholder="https://xxxx.up.railway.app (또는 동일)"
+              placeholder="https://xxxx.up.railway.app (보통 분류와 동일 호스트)"
               value={matchUrl}
               disabled={!canEdit || busy}
               onChange={e => setMatchUrl(e.target.value)}
             />
           </label>
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-slate-700">Match API Key</span>
+            <span className="text-xs font-medium text-slate-700">Match API Key (order-mail-match)</span>
             <div className="flex gap-2">
               <input
                 type={showMatchKey ? 'text' : 'password'}
                 className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:bg-slate-50 bg-white"
-                placeholder="aidoc_... 또는 매칭 전용 키"
+                placeholder="order-mail-match 전용 키"
                 value={matchKey}
                 disabled={!canEdit || busy}
                 onChange={e => setMatchKey(e.target.value)}
@@ -191,38 +229,42 @@ export function AiConnectionModal({
               </button>
             </div>
           </label>
+          {matchTest.msg && (
+            <div
+              className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs ${
+                matchTest.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
+              }`}
+            >
+              {matchTest.ok
+                ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+              <span>{matchTest.msg}</span>
+            </div>
+          )}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void runMatchTest()}
+              disabled={matchTest.testing || busy}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-teal-300 bg-white text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {matchTest.testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+              매칭 엔진 테스트
+            </button>
+          </div>
         </div>
 
-        {testMsg && (
-          <div
-            className={`flex items-start gap-2 rounded-xl px-3 py-2 text-xs ${
-              testOk ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
-            }`}
-          >
-            {testOk ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /> : <XCircle className="w-4 h-4 shrink-0 mt-0.5" />}
-            <span>{testMsg}</span>
-          </div>
-        )}
         {err && <p className="text-xs text-red-600">{err}</p>}
         {!canEdit && (
           <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2">관리자만 저장할 수 있습니다. 연결 테스트는 가능합니다.</p>
         )}
 
-        <div className="flex flex-wrap justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => void runTest()}
-            disabled={testing || busy}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50"
-          >
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
-            연결 테스트
-          </button>
+        <div className="flex flex-wrap justify-end gap-2 pt-1">
           {canEdit && (
             <button
               type="button"
               onClick={() => void save()}
-              disabled={busy || testing}
+              disabled={busy || anyTesting}
               className="px-4 py-2 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               저장
