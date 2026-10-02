@@ -77,7 +77,11 @@ async function resolveQuoteLabelId(): Promise<string> {
 }
 
 /** 라벨 메일 풀 로드 (기간 없음, 첨부 없음) */
-async function loadLabeledMails(labelId: string, signal?: AbortSignal): Promise<MailMessage[]> {
+async function loadLabeledMails(
+  labelId: string,
+  signal?: AbortSignal,
+  onProgress?: (loaded: number) => void,
+): Promise<MailMessage[]> {
   const pageSize = 500;
   const all: MailMessage[] = [];
   let from = 0;
@@ -95,6 +99,7 @@ async function loadLabeledMails(labelId: string, signal?: AbortSignal): Promise<
     if (error) throw error;
     const chunk = (data || []) as MailMessage[];
     all.push(...chunk);
+    onProgress?.(all.length);
     if (chunk.length < pageSize) break;
     from += pageSize;
     // 과도한 풀 방지
@@ -253,12 +258,15 @@ export function useOrderMailMatch() {
     if (labeledMailsRef.current && labelIdRef.current) {
       return { labelId: labelIdRef.current, mails: labeledMailsRef.current };
     }
-    setProgress(`라벨 「${QUOTE_MAIL_LABEL_NAME}」 메일 불러오는 중…`);
+    setProgress(`라벨 「${QUOTE_MAIL_LABEL_NAME}」 메일 불러오는 중… 0통`);
     const labelId = await resolveQuoteLabelId();
     throwIfAborted(signal);
-    const mails = await loadLabeledMails(labelId, signal);
+    const mails = await loadLabeledMails(labelId, signal, (loaded) => {
+      setProgress(`라벨 「${QUOTE_MAIL_LABEL_NAME}」 메일 불러오는 중… ${loaded}통`);
+    });
     labelIdRef.current = labelId;
     labeledMailsRef.current = mails;
+    setProgress(`라벨 「${QUOTE_MAIL_LABEL_NAME}」 메일 ${mails.length}통 준비됨`);
     return { labelId, mails };
   }, []);
 
@@ -315,7 +323,7 @@ export function useOrderMailMatch() {
       return { status: 'unmatched' as const, candidateCount: 0 };
     }
 
-    setProgress(`Ref 매칭 중… (${current.order.doc_no} · 라벨 메일 ${labeledMails.length}통)`);
+    setProgress(`메일 확인 중… 0/${labeledMails.length} · ${current.order.doc_no}`);
     throwIfAborted(signal);
 
     // 다른 견적에 이미 확정된 메일 제외
@@ -331,6 +339,12 @@ export function useOrderMailMatch() {
       if (t.mail_message_id) usedMailIds.add(t.mail_message_id as number);
     }
     const pool = labeledMails.filter(m => !usedMailIds.has(m.id));
+    const skippedTaken = labeledMails.length - pool.length;
+    setProgress(
+      `메일 확인 중… 0/${pool.length}` +
+        (skippedTaken > 0 ? ` (확정제외 ${skippedTaken})` : '') +
+        ` · ${current.order.doc_no}`,
+    );
 
     type Hit = {
       mail_id: number;
@@ -343,18 +357,34 @@ export function useOrderMailMatch() {
     let hits: Hit[] = [];
     let engineVersion = 'erp-local-ref@1';
 
+    const reportScan = (checked: number, total: number, hitCount: number, prefix?: string) => {
+      setProgress(
+        `${prefix || '메일 확인 중'}… ${checked}/${total}` +
+          (hitCount > 0 ? ` · 후보 ${hitCount}` : '') +
+          (skippedTaken > 0 ? ` · 확정제외 ${skippedTaken}` : '') +
+          ` · ${current.order.doc_no}`,
+      );
+    };
+
     // 엔진 있으면 호출 (텍스트만). 실패/미배포 시 로컬 폴백
     if (isOrderMailMatchConfigured()) {
       try {
-        setProgress(`매칭 엔진 호출 중… (${current.order.doc_no})`);
-        const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
-        // 엔진에 전량 보내면 무거움 → 로컬로 1차 줄인 뒤 전달, 없으면 제목 기준 상위
-        const localPre = localMatchOrderToMails(
+        const localPre = await localMatchOrderToMails(
           current.order,
           current.partnerEmail,
           pool,
-          { minRefScore: 0.5, maxCandidates: 40 },
+          {
+            minRefScore: 0.5,
+            maxCandidates: 40,
+            signal,
+            onProgress: (checked, total, hitCount) => {
+              reportScan(checked, total, hitCount, '메일 확인 중');
+            },
+          },
         );
+        throwIfAborted(signal);
+        setProgress(`매칭 엔진 호출 중… (${localPre.length || Math.min(80, pool.length)}통) · ${current.order.doc_no}`);
+        const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
         const preMails = localPre.length > 0
           ? localPre.map(h => h.mail)
           : pool.slice(0, 80);
@@ -377,7 +407,7 @@ export function useOrderMailMatch() {
               reasons: c.reasons || [],
               evidence: (c.evidence && typeof c.evidence === 'object'
                 ? c.evidence as Record<string, unknown>
-                : {}) ,
+                : {}),
               mail,
             };
           })
@@ -390,11 +420,18 @@ export function useOrderMailMatch() {
     }
 
     if (hits.length === 0) {
-      const localHits = localMatchOrderToMails(
+      const localHits = await localMatchOrderToMails(
         current.order,
         current.partnerEmail,
         pool,
-        { minRefScore: 0.82, maxCandidates: 20 },
+        {
+          minRefScore: 0.82,
+          maxCandidates: 20,
+          signal,
+          onProgress: (checked, total, hitCount) => {
+            reportScan(checked, total, hitCount, '메일 확인 중');
+          },
+        },
       );
       hits = localHits.map(h => ({
         mail_id: h.mail.id,
@@ -406,6 +443,12 @@ export function useOrderMailMatch() {
       }));
       engineVersion = 'erp-local-ref@1';
     }
+
+    setProgress(
+      hits.length > 0
+        ? `메일 확인 완료 ${pool.length}/${pool.length} · 후보 ${hits.length}통 저장 중… · ${current.order.doc_no}`
+        : `메일 확인 완료 ${pool.length}/${pool.length} · 후보 없음 · ${current.order.doc_no}`,
+    );
 
     await clearOrderMatches(orderId);
     throwIfAborted(signal);
