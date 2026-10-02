@@ -1,34 +1,24 @@
-# mail-ai-api: GT pull · 회귀 eval 체크리스트
+# mail-ai-api: GT 프로그램 · eval 체크리스트
 
-erp-test `docs/LEARNING_GT_PIPELINE.md` Step 1용.  
-**목표 지표의 중심은 품목(items) + 첨부 추출 정확도.**
+**지금은 실 matched 전달보다, fixture/스키마로 eval·OCR 프로그램을 먼저.**  
+erp-test: `npm run learning-gt:pipeline` · `docs/LEARNING_GT_PIPELINE.md`
 
-## Pull
-- [ ] Supabase read: `order_mail_learning_matches` where `status='matched'`  
-  또는 erp-test가 내려준 `samples.jsonl` 로드
-- [ ] 조인: mail_messages, mail_attachments(메타), orders, order_items, partners
-- [ ] `gt_snapshots/{snapshot_id}/` 에 복사 고정 (원본 matched가 늘어도 벤치 불변)
-- [ ] 첨부 바이너리: attachment id로 ERP gmail-attachment(또는 동일 스토리지)에서 로드
+## P1 프로그램 (데이터 나중)
+- [ ] `samples.jsonl` 스키마 파서 (erp fixture와 동일)
+- [ ] gold vs extract 비교 — **`line_item_accuracy` 필수**, field_exact, classify
+- [ ] snapshot 디렉터리 고정 로더 (`gt_snapshots/{id}/`)
+- [ ] 첨부 id → 바이너리 로드 어댑터 (stub OK)
+- [ ] `summary.json` / `details.json` / fail_bank 출력
+- [ ] fixture만으로 CI 스모크
 
-## Eval (필수)
-각 GT 샘플에 classify + extract 실행 후 `gold`와 비교:
+## P2+ (추출 정확도)
+- [ ] 첨부 OCR·표·재검증 + 품목 eval 연동
+- [ ] lexicon/templates 라우팅
+- [ ] A of B 규칙
 
-| 메트릭 | 설명 |
-|--------|------|
-| `classify_ok` | document_type = quotation_request |
-| `field_exact` | document_no, customer.name, vessel, contact 등 |
-| `line_item_accuracy` | 품명·규격·수량·단위 매칭 (순서 허용 옵션) |
-| `attachment_read_ok` | OCR/파싱 실패율 |
-| `source_filled` | evidence/source 채움률 |
-
-- [ ] `summary.json` + `details.json` 저장
-- [ ] 이전 snapshot 대비 회귀 시 배포 실패
-
-## 파생 자산 (Step 2+)
-- [ ] `lexicon.json` — 필드별 토큰
-- [ ] `templates.json` — from 도메인/제목 패턴 클러스터
-- [ ] `fail_bank/` — 오추출 유형별 샘플
+## 실데이터 연결 (나중에)
+- [ ] erp 「GT 스냅샷」또는 `v_learning_gt_matched` pull
+- [ ] 배포 게이트: 이전 snapshot 대비 회귀 차단
 
 ## 하지 말 것
-- erp matched 변경 이벤트마다 자동 재학습
-- 분류 키와 학습 GT 키 혼용으로 운영 DB 오염
+- matched 변경마다 자동 재학습 / 실시간 push
