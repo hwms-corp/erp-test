@@ -1,18 +1,21 @@
 import { useCallback, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
+  buildMatchMailPayload,
   buildMatchOrderPayload,
-  candidateReceivedWindow,
+  derivePrimaryMatch,
+  labelNamesMatch,
+  localMatchOrderToMails,
+  QUOTE_MAIL_LABEL_NAME,
   type LearningOrderListItem,
   type OrderMailLearningMatchRow,
 } from '@/lib/orderMailMatch';
-import { callOrderMailMatch } from '@/lib/orderMailMatchClient';
-import { fetchGmailAttachmentBase64 } from '@/lib/gmailAttachment';
-import type { MailAttachment, MailMessage } from '@/types/aiMail';
+import {
+  callOrderMailMatch,
+  isOrderMailMatchConfigured,
+} from '@/lib/orderMailMatchClient';
+import type { MailMessage } from '@/types/aiMail';
 import type { OrderItem, OrderWithPartner } from '@/types';
-
-const ATT_MAX_BYTES = 8 * 1024 * 1024; // 8MB / file for match payload
-const ATT_MAX_FILES = 8;
 
 function throwIfAborted(signal: AbortSignal) {
   if (signal.aborted) {
@@ -58,15 +61,77 @@ async function loadPartnerEmails(partnerIds: number[]): Promise<Map<number, stri
   return map;
 }
 
+async function resolveQuoteLabelId(): Promise<string> {
+  const { data, error } = await supabase
+    .from('gmail_labels')
+    .select('id, name')
+    .eq('label_type', 'user');
+  if (error) throw error;
+  const hit = (data || []).find(l => labelNamesMatch(String(l.name || ''), QUOTE_MAIL_LABEL_NAME));
+  if (!hit?.id) {
+    throw new Error(
+      `Gmail 라벨 「${QUOTE_MAIL_LABEL_NAME}」을 찾을 수 없습니다. 메일함에서 라벨 동기화 후 다시 시도하세요.`,
+    );
+  }
+  return String(hit.id);
+}
+
+/** 라벨 메일 풀 로드 (기간 없음, 첨부 없음) */
+async function loadLabeledMails(labelId: string, signal?: AbortSignal): Promise<MailMessage[]> {
+  const pageSize = 500;
+  const all: MailMessage[] = [];
+  let from = 0;
+  for (;;) {
+    if (signal) throwIfAborted(signal);
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from('mail_messages')
+      .select('id, subject, from_addr, to_addr, snippet, body_text, received_at, gmail_label_ids, is_sent, deleted_at')
+      .is('deleted_at', null)
+      .eq('is_sent', false)
+      .contains('gmail_label_ids', [labelId])
+      .order('received_at', { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    const chunk = (data || []) as MailMessage[];
+    all.push(...chunk);
+    if (chunk.length < pageSize) break;
+    from += pageSize;
+    // 과도한 풀 방지
+    if (all.length >= 8000) break;
+  }
+  return all;
+}
+
+function patchRow(
+  prev: LearningOrderListItem[],
+  orderId: number,
+  matches: OrderMailLearningMatchRow[],
+  mailById: Map<number, MailMessage>,
+): LearningOrderListItem[] {
+  return prev.map(r => {
+    if (r.order.id !== orderId) return r;
+    const { match, candidateCount } = derivePrimaryMatch(matches);
+    const mail = match?.mail_message_id ? mailById.get(match.mail_message_id) ?? null : null;
+    return { ...r, matches, match, candidateCount, mail };
+  });
+}
+
 export function useOrderMailMatch() {
   const [rows, setRows] = useState<LearningOrderListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
+  const [queueActive, setQueueActive] = useState(false);
+  const [queueDone, setQueueDone] = useState(0);
+  const [queueTotal, setQueueTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState('');
   const abortRef = useRef<AbortController | null>(null);
+  const labeledMailsRef = useRef<MailMessage[] | null>(null);
+  const labelIdRef = useRef<string | null>(null);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
-  /** 빠른 리스트: 견적 + 저장된 매칭만 (전량 메일 스캔 없음) */
   const loadList = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -104,21 +169,24 @@ export function useOrderMailMatch() {
       }
 
       setProgress('매칭 결과 불러오는 중…');
-      const matchByOrder = new Map<number, OrderMailLearningMatchRow>();
+      const matchesByOrder = new Map<number, OrderMailLearningMatchRow[]>();
       for (let i = 0; i < orderIds.length; i += 200) {
         const ids = orderIds.slice(i, i + 200);
-        const { data: matches, error: mErr } = await supabase
+        const { data: matchRows, error: mErr } = await supabase
           .from('order_mail_learning_matches')
           .select('*')
           .in('order_id', ids);
         if (mErr) throw mErr;
-        for (const row of (matches || []) as OrderMailLearningMatchRow[]) {
-          matchByOrder.set(row.order_id, row);
+        for (const row of (matchRows || []) as OrderMailLearningMatchRow[]) {
+          const list = matchesByOrder.get(row.order_id) || [];
+          list.push(row);
+          matchesByOrder.set(row.order_id, list);
         }
       }
 
       const mailIds = [...new Set(
-        [...matchByOrder.values()]
+        [...matchesByOrder.values()]
+          .flat()
           .map(m => m.mail_message_id)
           .filter((id): id is number => id != null),
       )];
@@ -138,23 +206,31 @@ export function useOrderMailMatch() {
       const partnerEmails = await loadPartnerEmails([...new Set(orders.map(o => o.partner_id))]);
 
       const list: LearningOrderListItem[] = orders.map(order => {
-        const match = matchByOrder.get(order.id) ?? null;
+        const matches = matchesByOrder.get(order.id) || [];
+        const { match, candidateCount } = derivePrimaryMatch(matches);
         const mail = match?.mail_message_id ? mailById.get(match.mail_message_id) ?? null : null;
         return {
           order,
           items: itemsByOrder.get(order.id) || [],
           partnerEmail: partnerEmails.get(order.partner_id) ?? null,
+          matches,
           match,
           mail,
+          candidateCount,
         };
       });
 
-      // 비매칭(또는 미실행) 먼저? 사용자: 처음엔 비매칭. 표시는 전체, 필터는 UI
-      // 정렬: 비매칭/미실행 → 매칭, 견적일 최신
       list.sort((a, b) => {
-        const aMatched = a.match?.status === 'matched' ? 1 : 0;
-        const bMatched = b.match?.status === 'matched' ? 1 : 0;
-        if (aMatched !== bMatched) return aMatched - bMatched;
+        const rank = (x: LearningOrderListItem) => {
+          if (x.match?.status === 'matched') return 2;
+          if (x.candidateCount > 0) return 1;
+          if (x.match?.status === 'failed') return 3;
+          if (x.match?.status === 'unmatched') return 1;
+          return 0; // pending
+        };
+        const ra = rank(a);
+        const rb = rank(b);
+        if (ra !== rb) return ra - rb;
         return (b.order.order_date || '').localeCompare(a.order.order_date || '');
       });
 
@@ -173,205 +249,255 @@ export function useOrderMailMatch() {
     setProgress('중단 요청 중…');
   }, []);
 
+  const ensureLabeledMails = useCallback(async (signal: AbortSignal) => {
+    if (labeledMailsRef.current && labelIdRef.current) {
+      return { labelId: labelIdRef.current, mails: labeledMailsRef.current };
+    }
+    setProgress(`라벨 「${QUOTE_MAIL_LABEL_NAME}」 메일 불러오는 중…`);
+    const labelId = await resolveQuoteLabelId();
+    throwIfAborted(signal);
+    const mails = await loadLabeledMails(labelId, signal);
+    labelIdRef.current = labelId;
+    labeledMailsRef.current = mails;
+    return { labelId, mails };
+  }, []);
+
+  const clearOrderMatches = useCallback(async (orderId: number) => {
+    const { error } = await supabase
+      .from('order_mail_learning_matches')
+      .delete()
+      .eq('order_id', orderId);
+    if (error) throw error;
+  }, []);
+
   /**
-   * 견적 1건 매칭:
-   * 1) 15일 윈도우 후보 메일 조회
-   * 2) 이미 matched인 메일 제외
-   * 3) 첨부 base64 포함 API 호출
-   * 4) DB upsert
+   * 견적 1건 매칭 (큐에서도 재사용).
+   * 라벨 메일만 · 기간/첨부 없음 · Ref 키 · 다중 후보 저장.
    */
-  const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    const { signal } = ac;
+  const matchOneInternal = useCallback(async (
+    orderId: number,
+    opts: { rematch?: boolean; signal: AbortSignal; keepProgress?: boolean },
+  ) => {
+    const { signal } = opts;
+    const current = rowsRef.current.find(r => r.order.id === orderId);
+    if (!current) throw new Error('목록에서 견적을 찾을 수 없습니다. 새로고침 후 다시 시도하세요.');
+
+    if (current.match?.status === 'matched' && !opts.rematch) {
+      throw new Error('이미 확정 매칭되어 있습니다. 다시 매칭하려면 「다시 매칭」을 누르세요.');
+    }
 
     setMatchingOrderId(orderId);
-    setError(null);
-    try {
-      const current = rows.find(r => r.order.id === orderId);
-      if (!current) throw new Error('목록에서 견적을 찾을 수 없습니다. 새로고침 후 다시 시도하세요.');
+    const { mails: labeledMails } = await ensureLabeledMails(signal);
+    throwIfAborted(signal);
 
-      if (current.match?.status === 'matched' && !opts?.rematch) {
-        throw new Error('이미 매칭되어 있습니다. 다시 매칭하려면 「다시 매칭」을 누르세요.');
-      }
-
-      const { fromIso, toIsoExclusive } = candidateReceivedWindow(current.order);
-
-      // 다른 견적에 이미 매칭된 메일
-      const { data: takenRows } = await supabase
-        .from('order_mail_learning_matches')
-        .select('mail_message_id, order_id')
-        .eq('status', 'matched')
-        .not('mail_message_id', 'is', null);
-      throwIfAborted(signal);
-      const usedMailIds = new Set<number>();
-      for (const t of takenRows || []) {
-        if (t.order_id === orderId) continue; // rematch 시 본인 링크는 후보 가능
-        if (t.mail_message_id) usedMailIds.add(t.mail_message_id as number);
-      }
-
-      setProgress('후보 메일 조회 중…');
-      const { data: candMails, error: cErr } = await supabase
-        .from('mail_messages')
-        .select('*')
-        .is('deleted_at', null)
-        .eq('is_sent', false)
-        .gte('received_at', fromIso)
-        .lt('received_at', toIsoExclusive)
-        .order('received_at', { ascending: false })
-        .limit(200);
-      if (cErr) throw cErr;
-      throwIfAborted(signal);
-
-      const candidates = ((candMails || []) as MailMessage[]).filter(m => !usedMailIds.has(m.id));
-
-      if (candidates.length === 0) {
-        const unmatchedRow = {
-          order_id: orderId,
-          mail_message_id: null,
-          status: 'unmatched' as const,
-          score: null,
-          match_reasons: ['no_candidates_in_15d_window'],
-          evidence: { window: { fromIso, toIsoExclusive }, candidate_count: 0 },
-          engine_version: null,
-          error_message: null,
-          matched_at: new Date().toISOString(),
-        };
-        const { data: saved, error: upErr } = await supabase
-          .from('order_mail_learning_matches')
-          .upsert(unmatchedRow, { onConflict: 'order_id' })
-          .select('*')
-          .single();
-        if (upErr) throw upErr;
-        setRows(prev => prev.map(r => (
-          r.order.id === orderId
-            ? { ...r, match: saved as OrderMailLearningMatchRow, mail: null }
-            : r
-        )));
-        return { status: 'unmatched' as const };
-      }
-
-      setProgress(`첨부 준비 중… (후보 ${candidates.length}통)`);
-      const candPayload = [];
-      let attDone = 0;
-      for (const mail of candidates) {
-        throwIfAborted(signal);
-        const { data: atts } = await supabase
-          .from('mail_attachments')
-          .select('id, filename, mime_type, size_bytes, gmail_attachment_id')
-          .eq('mail_message_id', mail.id)
-          .order('id', { ascending: true })
-          .limit(ATT_MAX_FILES);
-
-        const attachments: {
-          id: number;
-          filename: string;
-          mime_type: string | null;
-          size_bytes: number | null;
-          content_base64?: string;
-        }[] = [];
-
-        for (const a of (atts || []) as MailAttachment[]) {
-          throwIfAborted(signal);
-          const size = a.size_bytes ?? 0;
-          const entry = {
-            id: a.id,
-            filename: a.filename,
-            mime_type: a.mime_type,
-            size_bytes: a.size_bytes,
-          };
-          if (size > 0 && size <= ATT_MAX_BYTES && a.gmail_attachment_id) {
-            try {
-              const bin = await fetchGmailAttachmentBase64(a.id);
-              throwIfAborted(signal);
-              if (bin?.content_base64) {
-                attachments.push({ ...entry, content_base64: bin.content_base64 });
-                continue;
-              }
-            } catch (e) {
-              if (e instanceof Error && e.name === 'AbortError') throw e;
-              // 메타만 전달
-            }
-          }
-          attachments.push(entry);
-        }
-
-        candPayload.push({
-          mail_id: mail.id,
-          subject: mail.subject,
-          from_addr: mail.from_addr,
-          to_addr: mail.to_addr,
-          received_at: mail.received_at,
-          body_text: mail.body_text,
-          snippet: mail.snippet,
-          attachments,
-        });
-        attDone += 1;
-        if (attDone % 5 === 0 || attDone === candidates.length) {
-          setProgress(`첨부 준비 중… (${attDone}/${candidates.length})`);
-        }
-      }
-
-      setProgress('매칭 엔진 호출 중… (오래 걸리면 「강제 중단」)');
-      const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
-      const result = await callOrderMailMatch({
-        order: orderPayload,
-        candidates: candPayload,
-        signal,
-      });
-      throwIfAborted(signal);
-
-      const saveRow = {
+    if (labeledMails.length === 0) {
+      const msg = `라벨 「${QUOTE_MAIL_LABEL_NAME}」에 메일이 없습니다.`;
+      await clearOrderMatches(orderId);
+      const unmatchedRow = {
         order_id: orderId,
-        mail_message_id: result.status === 'matched' ? result.mail_id : null,
-        status: result.status,
-        score: result.score,
-        match_reasons: result.reasons || [],
-        evidence: result.evidence || {},
-        engine_version: result.engine_version || null,
-        error_message: null,
+        mail_message_id: null,
+        status: 'unmatched' as const,
+        score: null,
+        match_reasons: ['no_labeled_mails'],
+        evidence: { label: QUOTE_MAIL_LABEL_NAME, pool_count: 0 },
+        engine_version: 'erp-local-ref@1',
+        error_message: msg,
         matched_at: new Date().toISOString(),
       };
-
       const { data: saved, error: upErr } = await supabase
         .from('order_mail_learning_matches')
-        .upsert(saveRow, { onConflict: 'order_id' })
+        .insert(unmatchedRow)
         .select('*')
         .single();
       if (upErr) throw upErr;
+      setRows(prev => patchRow(prev, orderId, [saved as OrderMailLearningMatchRow], new Map()));
+      if (!opts.keepProgress) setError(msg);
+      return { status: 'unmatched' as const, candidateCount: 0 };
+    }
 
-      let mail: MailMessage | null = null;
-      if (saved.mail_message_id) {
-        const { data: m } = await supabase
-          .from('mail_messages')
-          .select('*')
-          .eq('id', saved.mail_message_id)
-          .maybeSingle();
-        mail = (m as MailMessage) || null;
+    setProgress(`Ref 매칭 중… (${current.order.doc_no} · 라벨 메일 ${labeledMails.length}통)`);
+    throwIfAborted(signal);
+
+    // 다른 견적에 이미 확정된 메일 제외
+    const { data: takenRows } = await supabase
+      .from('order_mail_learning_matches')
+      .select('mail_message_id, order_id')
+      .eq('status', 'matched')
+      .not('mail_message_id', 'is', null);
+    throwIfAborted(signal);
+    const usedMailIds = new Set<number>();
+    for (const t of takenRows || []) {
+      if (t.order_id === orderId) continue;
+      if (t.mail_message_id) usedMailIds.add(t.mail_message_id as number);
+    }
+    const pool = labeledMails.filter(m => !usedMailIds.has(m.id));
+
+    type Hit = {
+      mail_id: number;
+      score: number;
+      extracted_ref: string | null;
+      reasons: string[];
+      evidence: Record<string, unknown>;
+      mail: MailMessage;
+    };
+    let hits: Hit[] = [];
+    let engineVersion = 'erp-local-ref@1';
+
+    // 엔진 있으면 호출 (텍스트만). 실패/미배포 시 로컬 폴백
+    if (isOrderMailMatchConfigured()) {
+      try {
+        setProgress(`매칭 엔진 호출 중… (${current.order.doc_no})`);
+        const orderPayload = buildMatchOrderPayload(current.order, current.items, current.partnerEmail);
+        // 엔진에 전량 보내면 무거움 → 로컬로 1차 줄인 뒤 전달, 없으면 제목 기준 상위
+        const localPre = localMatchOrderToMails(
+          current.order,
+          current.partnerEmail,
+          pool,
+          { minRefScore: 0.5, maxCandidates: 40 },
+        );
+        const preMails = localPre.length > 0
+          ? localPre.map(h => h.mail)
+          : pool.slice(0, 80);
+        const result = await callOrderMailMatch({
+          order: orderPayload,
+          candidates: preMails.map(buildMatchMailPayload),
+          signal,
+        });
+        throwIfAborted(signal);
+        engineVersion = result.engine_version || 'order-mail-match@ref';
+        const mailMap = new Map(preMails.map(m => [m.id, m]));
+        hits = result.candidates
+          .map(c => {
+            const mail = mailMap.get(c.mail_id);
+            if (!mail) return null;
+            return {
+              mail_id: c.mail_id,
+              score: c.score,
+              extracted_ref: c.extracted_ref ?? null,
+              reasons: c.reasons || [],
+              evidence: (c.evidence && typeof c.evidence === 'object'
+                ? c.evidence as Record<string, unknown>
+                : {}) ,
+              mail,
+            };
+          })
+          .filter((x): x is Hit => x != null);
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') throw e;
+        // 로컬 폴백
+        engineVersion = 'erp-local-ref@1';
       }
+    }
 
-      setRows(prev => prev.map(r => (
-        r.order.id === orderId
-          ? { ...r, match: saved as OrderMailLearningMatchRow, mail }
-          : r
-      )));
+    if (hits.length === 0) {
+      const localHits = localMatchOrderToMails(
+        current.order,
+        current.partnerEmail,
+        pool,
+        { minRefScore: 0.82, maxCandidates: 20 },
+      );
+      hits = localHits.map(h => ({
+        mail_id: h.mail.id,
+        score: h.score,
+        extracted_ref: h.extracted_ref,
+        reasons: h.reasons,
+        evidence: h.evidence,
+        mail: h.mail,
+      }));
+      engineVersion = 'erp-local-ref@1';
+    }
+
+    await clearOrderMatches(orderId);
+    throwIfAborted(signal);
+
+    if (hits.length === 0) {
+      const msg =
+        `「${QUOTE_MAIL_LABEL_NAME}」메일에서 견적번호(${current.order.doc_no})와 맞는 Ref를 찾지 못했습니다.`;
+      const unmatchedRow = {
+        order_id: orderId,
+        mail_message_id: null,
+        status: 'unmatched' as const,
+        score: null,
+        match_reasons: ['no_ref_candidates'],
+        evidence: {
+          label: QUOTE_MAIL_LABEL_NAME,
+          pool_count: pool.length,
+          doc_no: current.order.doc_no,
+        },
+        engine_version: engineVersion,
+        error_message: msg,
+        matched_at: new Date().toISOString(),
+      };
+      const { data: saved, error: upErr } = await supabase
+        .from('order_mail_learning_matches')
+        .insert(unmatchedRow)
+        .select('*')
+        .single();
+      if (upErr) throw upErr;
+      setRows(prev => patchRow(prev, orderId, [saved as OrderMailLearningMatchRow], new Map()));
+      if (!opts.keepProgress) setError(msg);
+      return { status: 'unmatched' as const, candidateCount: 0 };
+    }
+
+    const now = new Date().toISOString();
+    const insertRows = hits.map(h => ({
+      order_id: orderId,
+      mail_message_id: h.mail_id,
+      status: 'candidate' as const,
+      score: h.score,
+      match_reasons: h.reasons,
+      evidence: {
+        ...h.evidence,
+        extracted_ref: h.extracted_ref,
+        label: QUOTE_MAIL_LABEL_NAME,
+      },
+      engine_version: engineVersion,
+      error_message: null,
+      matched_at: now,
+    }));
+
+    const { data: savedRows, error: insErr } = await supabase
+      .from('order_mail_learning_matches')
+      .insert(insertRows)
+      .select('*');
+    if (insErr) throw insErr;
+
+    const saved = (savedRows || []) as OrderMailLearningMatchRow[];
+    const mailById = new Map(hits.map(h => [h.mail_id, h.mail]));
+    setRows(prev => patchRow(prev, orderId, saved, mailById));
+    return { status: 'candidates' as const, candidateCount: saved.length };
+  }, [clearOrderMatches, ensureLabeledMails]);
+
+  const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
+    if (queueActive) {
+      setError('전체 매칭 진행 중에는 개별 매칭을 실행할 수 없습니다. 먼저 중단하세요.');
+      return { status: 'busy' as const };
+    }
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setError(null);
+    try {
+      const result = await matchOneInternal(orderId, {
+        rematch: opts?.rematch,
+        signal: ac.signal,
+      });
       setProgress('');
-      return { status: result.status };
+      return result;
     } catch (e) {
       const aborted =
         (e instanceof Error && (e.name === 'AbortError' || e.message.includes('중단'))) ||
         (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError');
       if (aborted) {
-        setError('매칭을 강제 중단했습니다. 다시 「매칭」으로 재시도할 수 있습니다.');
+        setError('매칭을 강제 중단했습니다.');
         setProgress('');
         return { status: 'cancelled' as const };
       }
       const msg = e instanceof Error ? e.message : '매칭 실패';
       setError(msg);
-      // failed 기록
       try {
-        await supabase.from('order_mail_learning_matches').upsert({
+        await clearOrderMatches(orderId);
+        await supabase.from('order_mail_learning_matches').insert({
           order_id: orderId,
           mail_message_id: null,
           status: 'failed',
@@ -381,7 +507,7 @@ export function useOrderMailMatch() {
           engine_version: null,
           error_message: msg.slice(0, 500),
           matched_at: new Date().toISOString(),
-        }, { onConflict: 'order_id' });
+        });
         await loadList();
       } catch { /* ignore */ }
       setProgress('');
@@ -390,16 +516,161 @@ export function useOrderMailMatch() {
       if (abortRef.current === ac) abortRef.current = null;
       setMatchingOrderId(null);
     }
-  }, [rows, loadList]);
+  }, [queueActive, matchOneInternal, clearOrderMatches, loadList]);
+
+  /**
+   * 전체 매칭 큐: 미확정 견적을 하나씩 순차 처리, 건별 즉시 UI 반영.
+   */
+  const matchAll = useCallback(async () => {
+    if (queueActive || matchingOrderId != null) return;
+    const queue = rowsRef.current.filter(r => r.match?.status !== 'matched');
+    if (queue.length === 0) {
+      setError('매칭할 미확정 견적이 없습니다. (이미 확정된 건은 건너뜁니다)');
+      return;
+    }
+
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setQueueActive(true);
+    setQueueDone(0);
+    setQueueTotal(queue.length);
+    setError(null);
+    labeledMailsRef.current = null; // 풀 새로 로드
+    labelIdRef.current = null;
+
+    let done = 0;
+    try {
+      await ensureLabeledMails(ac.signal);
+      for (const item of queue) {
+        throwIfAborted(ac.signal);
+        setQueueDone(done);
+        setProgress(
+          `전체 매칭 ${done + 1}/${queue.length} · ${item.order.doc_no}`,
+        );
+        try {
+          await matchOneInternal(item.order.id, {
+            rematch: true,
+            signal: ac.signal,
+            keepProgress: true,
+          });
+        } catch (e) {
+          if (e instanceof Error && e.name === 'AbortError') throw e;
+          // 건별 실패는 기록 후 다음으로
+          const msg = e instanceof Error ? e.message : '매칭 실패';
+          try {
+            await clearOrderMatches(item.order.id);
+            const { data: failed } = await supabase
+              .from('order_mail_learning_matches')
+              .insert({
+                order_id: item.order.id,
+                mail_message_id: null,
+                status: 'failed',
+                score: null,
+                match_reasons: [],
+                evidence: {},
+                engine_version: null,
+                error_message: msg.slice(0, 500),
+                matched_at: new Date().toISOString(),
+              })
+              .select('*')
+              .single();
+            if (failed) {
+              setRows(prev => patchRow(prev, item.order.id, [failed as OrderMailLearningMatchRow], new Map()));
+            }
+          } catch { /* ignore */ }
+        }
+        done += 1;
+        setQueueDone(done);
+        setMatchingOrderId(null);
+      }
+      setProgress(`전체 매칭 완료 · ${done}/${queue.length}`);
+    } catch (e) {
+      const aborted =
+        (e instanceof Error && (e.name === 'AbortError' || e.message.includes('중단'))) ||
+        (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError');
+      if (aborted) {
+        setError(`전체 매칭을 중단했습니다. (${done}/${queue.length} 완료)`);
+      } else {
+        setError(e instanceof Error ? e.message : '전체 매칭 실패');
+      }
+      setProgress('');
+    } finally {
+      if (abortRef.current === ac) abortRef.current = null;
+      setMatchingOrderId(null);
+      setQueueActive(false);
+    }
+  }, [queueActive, matchingOrderId, ensureLabeledMails, matchOneInternal, clearOrderMatches]);
+
+  /** 상세에서 후보 메일 확정 */
+  const selectCandidate = useCallback(async (orderId: number, mailMessageId: number) => {
+    setError(null);
+    try {
+      // 해당 견적의 candidate → rejected, 선택 건 → matched
+      const { data: existing, error: e1 } = await supabase
+        .from('order_mail_learning_matches')
+        .select('*')
+        .eq('order_id', orderId);
+      if (e1) throw e1;
+      const rowsForOrder = (existing || []) as OrderMailLearningMatchRow[];
+      const target = rowsForOrder.find(r => r.mail_message_id === mailMessageId);
+      if (!target) throw new Error('선택한 후보를 찾을 수 없습니다. 다시 매칭하세요.');
+
+      // 다른 견적이 이미 이 메일을 matched로 쓰지 않는지
+      const { data: conflict } = await supabase
+        .from('order_mail_learning_matches')
+        .select('order_id')
+        .eq('mail_message_id', mailMessageId)
+        .eq('status', 'matched')
+        .neq('order_id', orderId)
+        .maybeSingle();
+      if (conflict) {
+        throw new Error(`이 메일은 이미 다른 견적(#${conflict.order_id})에 확정되어 있습니다.`);
+      }
+
+      for (const r of rowsForOrder) {
+        if (!r.id) continue;
+        if (r.mail_message_id === mailMessageId) {
+          const { error } = await supabase
+            .from('order_mail_learning_matches')
+            .update({
+              status: 'matched',
+              matched_at: new Date().toISOString(),
+              error_message: null,
+            })
+            .eq('id', r.id);
+          if (error) throw error;
+        } else if (r.status === 'candidate' || r.status === 'matched') {
+          const { error } = await supabase
+            .from('order_mail_learning_matches')
+            .update({ status: 'rejected' })
+            .eq('id', r.id);
+          if (error) throw error;
+        }
+      }
+
+      await loadList();
+      return { ok: true as const };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '확정 실패';
+      setError(msg);
+      return { ok: false as const, error: msg };
+    }
+  }, [loadList]);
 
   return {
     rows,
     loading,
     matchingOrderId,
+    queueActive,
+    queueDone,
+    queueTotal,
     error,
     progress,
     loadList,
     matchOne,
+    matchAll,
     cancelMatch,
+    selectCandidate,
   };
 }
