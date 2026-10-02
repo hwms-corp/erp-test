@@ -6,6 +6,7 @@ import {
   derivePrimaryMatch,
   labelNamesMatch,
   localMatchOrderToMails,
+  normalizeRef,
   QUOTE_MAIL_LABEL_NAME,
   type LearningOrderListItem,
   type OrderMailLearningMatchRow,
@@ -439,16 +440,41 @@ export function useOrderMailMatch() {
       engineVersion = 'erp-local-ref@1';
     }
 
+    // 견적번호(Ref) 100% 일치만 따로 집계
+    const docNorm = normalizeRef(current.order.doc_no);
+    const isExactRef = (h: Hit) => {
+      if (docNorm && h.extracted_ref && normalizeRef(h.extracted_ref) === docNorm) return true;
+      const refScore = h.evidence?.ref_score;
+      if (typeof refScore === 'number' && refScore >= 1) return true;
+      if (h.score >= 1 && h.extracted_ref && normalizeRef(h.extracted_ref) === docNorm) return true;
+      return false;
+    };
+    const exactHits = hits.filter(isExactRef);
+
+    let toSave: Hit[] = hits;
+    let autoMatched = false;
+    if (exactHits.length === 1) {
+      // 100% 1건 → 후보 없이 바로 확정
+      toSave = exactHits;
+      autoMatched = true;
+    } else if (exactHits.length >= 2) {
+      // 100% 2건 이상 → 그 건들만 후보
+      toSave = exactHits;
+    }
+    // exact 0건이면 fuzzy hits 전부 후보 (기존)
+
     setProgress(
-      hits.length > 0
-        ? `메일 확인 완료 ${pool.length}/${pool.length} · 후보 ${hits.length}통 저장 중… · ${current.order.doc_no}`
-        : `메일 확인 완료 ${pool.length}/${pool.length} · 후보 없음 · ${current.order.doc_no}`,
+      autoMatched
+        ? `메일 확인 완료 ${pool.length}/${pool.length} · 견적번호 100% 1건 → 확정 · ${current.order.doc_no}`
+        : toSave.length > 0
+          ? `메일 확인 완료 ${pool.length}/${pool.length} · 후보 ${toSave.length}통 저장 중… · ${current.order.doc_no}`
+          : `메일 확인 완료 ${pool.length}/${pool.length} · 후보 없음 · ${current.order.doc_no}`,
     );
 
     await clearOrderMatches(orderId);
     throwIfAborted(signal);
 
-    if (hits.length === 0) {
+    if (toSave.length === 0) {
       const msg =
         `「${QUOTE_MAIL_LABEL_NAME}」메일에서 견적번호(${current.order.doc_no})와 맞는 Ref를 찾지 못했습니다.`;
       const unmatchedRow = {
@@ -478,16 +504,19 @@ export function useOrderMailMatch() {
     }
 
     const now = new Date().toISOString();
-    const insertRows = hits.map(h => ({
+    const insertRows = toSave.map(h => ({
       order_id: orderId,
       mail_message_id: h.mail_id,
-      status: 'candidate' as const,
-      score: h.score,
-      match_reasons: h.reasons,
+      status: (autoMatched ? 'matched' : 'candidate') as 'matched' | 'candidate',
+      score: autoMatched ? 1 : h.score,
+      match_reasons: autoMatched
+        ? [...(h.reasons || []), 'auto_exact_ref']
+        : h.reasons,
       evidence: {
         ...h.evidence,
         extracted_ref: h.extracted_ref,
         label: QUOTE_MAIL_LABEL_NAME,
+        auto_matched: autoMatched,
       },
       engine_version: engineVersion,
       error_message: null,
@@ -501,9 +530,11 @@ export function useOrderMailMatch() {
     if (insErr) throw insErr;
 
     const saved = (savedRows || []) as OrderMailLearningMatchRow[];
-    const mailById = new Map(hits.map(h => [h.mail_id, h.mail]));
+    const mailById = new Map(toSave.map(h => [h.mail_id, h.mail]));
     setRows(prev => patchRow(prev, orderId, saved, mailById));
-    return { status: 'candidates' as const, candidateCount: saved.length };
+    return autoMatched
+      ? { status: 'matched' as const, candidateCount: 1 }
+      : { status: 'candidates' as const, candidateCount: saved.length };
   }, [clearOrderMatches, ensureLabeledMails]);
 
   const matchOne = useCallback(async (orderId: number, opts?: { rematch?: boolean }) => {
