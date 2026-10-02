@@ -1,62 +1,59 @@
-# 견적서 → 메일 학습매칭 엔진 스펙 (erp-test ↔ mail-ai-api)
+# 견적서 → 메일 학습매칭 (erp-test ↔ mail-ai-api)
 
 ## 목적
-사람이 작성한 **견적서**를 기준으로 **원본 RFQ 메일**(첨부 OCR/텍스트 포함)을 1:1로 찾아  
-mail-ai-api 학습용 GT 샘플을 만든다.
+사람이 작성한 **견적서**를 기준으로, Gmail 라벨 **`1-1. 견적서`** 메일을 찾아  
+학습용 GT 샘플을 만든다. **키 = 견적번호(doc_no) ↔ 메일 Ref no.**
 
-- 기존 분류 엔진: `메일 → 견적`
-- 이 엔진: `견적 → 메일` (역방향)
+## 핵심 규칙 (2026-10 재설계)
+| 항목 | 내용 |
+|------|------|
+| 후보 메일 | 라벨 `1-1. 견적서`만 (`gmail_labels` → `mail_messages.gmail_label_ids`) |
+| 기간 | **없음** (15일 윈도우 제거) |
+| 첨부 | **없음** (OCR/base64 제거). 제목·본문·발신자만 |
+| 키 | ERP `orders.doc_no` ↔ 메일 제목/본문의 Ref/문서번호 (정규화·유사 매칭) |
+| 보조 | 거래처명·담당자 (from/subject/body) |
+| UX | 행별 「매칭」+ **「전체 매칭」큐**(1건 완료→즉시 표시→다음) |
+| 결과 | **다중 후보** 저장 → 상세에서 사람이 1건 **확정** |
 
 ## ERP 동작
-1. 학습샘플 메뉴: 견적 리스트만 로드 + `order_mail_learning_matches` 조인 (기본 비매칭)
-2. 행별 「매칭」클릭 시에만 API 호출
-3. 후보 메일 1차 필터( **ERP** ):
-   - `is_sent = false`, 삭제 아님
-   - `order.created_at - 15일 ≤ received_at < order.created_at`
-   - 이미 다른 견적에 `matched`로 묶인 메일 제외
-4. **텍스트 사전 필터( ERP, 첨부 전 )** — `subject` / `from` / `body` / 첨부 **파일명(메타만)**:
-   - doc_no · 거래처 힌트/이메일 · vessel · 담당 · 품명 느슨 매칭으로 점수
-   - **`score >= 90` 중 상위 10통**만 통과 (절대 10통 초과 없음)
-   - 90점 이상 없으면 첨부/API 생략 + UI 메시지 (`no_candidates_above_text_score`)
-   - 통과분만 Gmail 첨부 base64 다운로드 → 엔진 호출
-   - mail-ai-api로 200통을 보내 OCR 돌리는 방식이 아님
-5. 결과를 DB에 저장 → 재진입 시 API 미호출
-6. 「다시 매칭」은 명시 버튼만
+1. 목록: 견적 + `order_mail_learning_matches` (후보 N / 확정 / 비매칭)
+2. 「매칭」또는 「전체 매칭」:
+   - 라벨 메일 풀 로드 (캐시)
+   - 엔진 API 있으면 텍스트 전용 호출, 없으면 **ERP 로컬 Ref 휴리스틱**
+   - 후보를 `status=candidate`로 다건 insert (기존 행 삭제 후)
+3. 상세: 후보 리스트 → 「이 메일로 확정」→ `matched` / 나머지 `rejected`
+4. 확정된 견적은 전체 매칭 큐에서 건너뜀
 
 ## 설정
 `mail_ai_settings.match_api_base_url` / `match_api_key`  
-(분류용 `api_base_url` / `api_key` 와 **분리** — 동일 키 폴백 없음)
+(분류용 `api_*` 와 분리. 엔진 미배포여도 ERP 로컬 매칭으로 동작)
 
-## erp-test 연동 위치 (mail-ai-api 에이전트용)
+## erp-test 연동 위치
 
 | 역할 | 경로 |
 |------|------|
-| 스펙 문서 | `docs/ORDER_MAIL_MATCH_ENGINE.md` |
-| 학습매칭 API 클라이언트 | `src/lib/orderMailMatchClient.ts` → `POST {match_api}/v1/order-mail-match` |
-| 후보 필터·한영 힌트 | `src/lib/orderMailMatch.ts` |
-| 목록/건별 매칭 훅 | `src/hooks/useOrderMailMatch.ts` |
-| 학습샘플 UI | `src/views/OrderMailMatchListPanel.tsx`, `OrderMailMatchDetailView.tsx` |
-| AI 연동 UI (키 2개) | `src/components/AiConnectionModal.tsx` |
-| 설정 로드/저장 | `src/hooks/useMail.ts` (`fetchMailAiSettings` / `updateMailAiSettings`) |
-| DB | `mail_ai_settings.api_*` = 분류, `mail_ai_settings.match_api_*` = 학습매칭 |
-| 마이그레이션 | `supabase/migrations/028_order_mail_learning_matches.sql` |
-| 메일함 분류 호출 | `src/lib/aiDocClient.ts` + `src/hooks/useMail.ts` (`classify`/`extract`) — **여기 건드리지 말 것** |
+| 스펙 | `docs/ORDER_MAIL_MATCH_ENGINE.md` (본 문서) |
+| Ref 추출·로컬 매칭 | `src/lib/orderMailMatch.ts` |
+| API 클라이언트 | `src/lib/orderMailMatchClient.ts` → `POST /v1/order-mail-match` |
+| 훅 (건별·전체 큐·확정) | `src/hooks/useOrderMailMatch.ts` |
+| 목록 UI | `src/views/OrderMailMatchListPanel.tsx` |
+| 상세·후보 선택 | `src/views/OrderMailMatchDetailView.tsx` |
+| DB | `028_…`, `029_order_mail_learning_multi_candidates.sql` |
 
-환경변수(빌드 폴백, 분류만):
-- `VITE_AI_DOC_API_URL` / `VITE_AI_DOC_API_KEY`
+---
 
-런타임 DB:
-- 분류: `api_base_url`, `api_key`
-- 학습매칭: `match_api_base_url`, `match_api_key`
+## mail-ai-api 에이전트 작업 가이드
 
-## API (제안)
+### 해야 할 일
+`POST /v1/order-mail-match` 를 **텍스트 Ref 다중 후보** API로 맞춘다.
 
-### `GET /health`
-기존과 동일.
+### 하지 말 것
+- 첨부 OCR / base64 처리
+- 15일 lookback / 날짜 윈도우
+- 품목 coverage·단가 비교
+- 분류(`/v1/documents/classify`)·추출 파이프라인 변경
 
-### `POST /v1/order-mail-match`
-견적 1건 + 후보 메일 N통 → best mail 또는 unmatched.
-
+### Request
 ```json
 {
   "order": {
@@ -65,71 +62,82 @@ mail-ai-api 학습용 GT 샘플을 만든다.
     "order_date": "2026-09-29",
     "created_at": "2026-09-29T05:12:00Z",
     "partner_name": "코리아마린서비스",
-    "partner_name_hints": ["Korea Marine Service", "kmseng", "코리아마린"],
+    "partner_name_hints": ["Korea Marine Service", "kmseng"],
     "partner_email": "kmseng@kmseng.com",
     "contact_person": "안정범",
     "vessel": "ADVANTAGE VERDICT",
-    "items": [
-      { "name": "...", "spec": "...", "qty": 1, "unit": "EA", "remark": null }
-    ]
+    "items": []
   },
   "candidates": [
     {
       "mail_id": 10411,
-      "subject": "...",
+      "subject": "... REF NO. [HW609-7590] ...",
       "from_addr": "...",
+      "to_addr": "...",
       "received_at": "2026-09-28T08:11:39Z",
       "body_text": "...",
-      "snippet": "...",
-      "attachments": [
-        {
-          "filename": "RFQ.pdf",
-          "mime_type": "application/pdf",
-          "content_base64": "..."
-        }
-      ]
+      "snippet": "..."
     }
   ],
   "options": {
+    "mode": "ref_text",
+    "no_attachments": true,
+    "no_date_window": true,
+    "return_candidates": true,
     "exclude_prices": true,
     "partner_ko_en_equivalent": true
   }
 }
 ```
 
-### Response
+ERP는 이미 라벨 필터된 메일만 넘긴다. 엔진은 **입력 후보만** 본다.
+
+### Response (필수)
 ```json
 {
-  "status": "matched",
-  "mail_id": 10411,
-  "score": 0.97,
-  "reasons": ["doc_no", "vessel", "item_name_coverage"],
-  "evidence": {
-    "fields": [
-      { "order_field": "doc_no", "order_value": "...", "mail_evidence": "...", "source": "attachment:RFQ.pdf" }
-    ]
-  },
-  "engine_version": "order-mail-match@0.1.0"
+  "status": "candidates",
+  "candidates": [
+    {
+      "mail_id": 10411,
+      "score": 0.93,
+      "extracted_ref": "HW609-7590",
+      "reasons": ["ref_fuzzy", "partner_from"],
+      "evidence": {
+        "extracted_ref": "HW609-7590",
+        "order_doc_no": "HW260929001",
+        "ref_score": 0.88
+      }
+    }
+  ],
+  "engine_version": "order-mail-match@ref-0.2.0"
 }
 ```
 
-`status`: `matched` | `unmatched`  
-후보가 없거나 확신 부족 시 `unmatched` + `mail_id: null`.
+- 후보 0건: `{ "status": "unmatched", "candidates": [] }`
+- 구버전 `{ status:"matched", mail_id }` 단일 응답도 ERP가 candidates로 정규화함 (과도기 OK)
+- **attachments 필드 무시** (와도 OCR 하지 말 것)
 
-## 엔진 요구사항
-1. **첨부 필수**: PDF / xlsx / docx / 이미지 OCR·텍스트 추출 후 비교  
-   (ERP가 이미 텍스트로 줄인 후보만 받음 — 엔진 쪽 추가 텍스트 프리필터 불필요)
-2. **금액·단가 제외** (견적 후입력)
-3. **거래처 한·영 동일음/통용표기** 동등 처리  
-   (예: 메일 `Korea Marine Service` ↔ ERP `코리아마린서비스`)
-4. 입력 후보만 대상으로 하고, ERP가 준 15일 윈도우 밖은 보지 않음
+### 엔진 로직 권장
+1. 각 메일 subject/body에서 Ref 토큰 추출 (`REF NO`, `Doc No`, 대괄호, `영문+숫자` 패턴)
+2. 정규화(대문자·하이픈/공백 제거) 후 `order.doc_no`와 exact / contains / fuzzy
+3. 애매하면 LLM으로 “같은 문서번호인가?”만 판별 (전량 LLM 금지)
+4. 거래처·담당은 가산점만
+5. score 내림차순으로 candidates 반환 (상한 20 권장)
 
-## 역할 분담 (텍스트 사전 필터)
-| 단계 | 담당 | 이유 |
-|------|------|------|
-| 15일 윈도우 + taken 제외 | **erp-test** | DB에 메일·견적이 있음 |
-| subject/body/from/파일명으로 **90점↑ 상위 10통** | **erp-test** | 첨부 base64 다운로드·전송 전에 후보를 줄여야 함. API에 200통 보내고 OCR하면 늦음 |
-| 첨부 OCR·정밀 매칭 | **mail-ai-api** | 엔진 전용. ERP가 넘긴 N통만 처리 |
+### 인증
+기존 match API Key (`Authorization: Bearer …`). 분류 키와 별도.
 
-## erp-test 클라이언트
-`src/lib/orderMailMatchClient.ts` → `POST {match_api_base_url}/v1/order-mail-match`
+### 헬스
+`GET /health` + ERP가 빈 candidates로 POST probe (401/404만 실패).
+
+### 완료 기준
+- [ ] `mode=ref_text` / `no_attachments` 동작
+- [ ] `candidates[]` 다중 반환
+- [ ] 첨부·날짜 로직 제거
+- [ ] erp-test에서 엔진 키 넣으면 로컬 폴백 대신 엔진 결과 저장 (`engine_version` 확인)
+
+---
+
+## DB status
+`candidate` | `matched`(사람 확정) | `rejected` | `unmatched` | `failed`  
+견적당 `matched` 최대 1, 메일당 `matched` 최대 1.

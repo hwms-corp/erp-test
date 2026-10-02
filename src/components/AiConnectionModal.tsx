@@ -196,8 +196,9 @@ export function AiConnectionModal({
         <div className="rounded-xl border border-teal-200 bg-teal-50/30 p-3 space-y-3">
           <p className="text-xs font-bold text-teal-900">2) 학습매칭 엔진 (견적 → 메일)</p>
           <p className="text-[11px] text-teal-800/80 leading-relaxed">
-            `POST /v1/order-mail-match` · 첨부 OCR 포함.
+            `POST /v1/order-mail-match` · 텍스트 Ref 다중 후보 (첨부 OCR 없음).
             <strong> 분류 API Key와 다른 order-mail-match 엔진 키</strong>를 넣으세요.
+            엔진 미배포여도 ERP 로컬 Ref 매칭으로 동작합니다.
           </p>
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-slate-700">Match API Base URL</span>

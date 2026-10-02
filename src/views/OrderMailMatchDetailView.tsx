@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Link2, Unlink, RefreshCw, AlertTriangle } from 'lucide-react';
+import {
+  ArrowLeft, ArrowRight, Link2, Unlink, RefreshCw, AlertTriangle, Check, Layers,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { OrderMailLearningMatchRow } from '@/lib/orderMailMatch';
+import {
+  derivePrimaryMatch,
+  type OrderMailLearningMatchRow,
+} from '@/lib/orderMailMatch';
 import { displayMailBody } from '@/lib/mailBody';
 import { formatReceivedAtKst } from '@/lib/mailTime';
 import type { MailMessage } from '@/types/aiMail';
@@ -21,73 +26,152 @@ export function OrderMailMatchDetailView() {
   const orderId = Number(orderIdParam);
   const [order, setOrder] = useState<OrderWithPartner | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
-  const [match, setMatch] = useState<OrderMailLearningMatchRow | null>(null);
-  const [mail, setMail] = useState<MailMessage | null>(null);
+  const [matches, setMatches] = useState<OrderMailLearningMatchRow[]>([]);
+  const [mailById, setMailById] = useState<Map<number, MailMessage>>(new Map());
+  const [selectedMailId, setSelectedMailId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(async () => {
     if (!Number.isFinite(orderId) || orderId <= 0) {
       setError('잘못된 견적 ID');
       setLoading(false);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data: orderView, error: oErr } = await supabase
-          .from('v_orders_with_partner')
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: orderView, error: oErr } = await supabase
+        .from('v_orders_with_partner')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+      if (oErr) throw oErr;
+      if (!orderView) throw new Error('견적서를 찾을 수 없습니다.');
+
+      const { data: itemsData } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', orderId)
+        .is('deleted_at', null)
+        .order('seq', { ascending: true });
+
+      const { data: matchRows } = await supabase
+        .from('order_mail_learning_matches')
+        .select('*')
+        .eq('order_id', orderId)
+        .order('score', { ascending: false });
+
+      const allMatches = (matchRows || []) as OrderMailLearningMatchRow[];
+      const mailIds = [...new Set(
+        allMatches.map(m => m.mail_message_id).filter((id): id is number => id != null),
+      )];
+      const map = new Map<number, MailMessage>();
+      if (mailIds.length) {
+        const { data: mails } = await supabase
+          .from('mail_messages')
           .select('*')
-          .eq('id', orderId)
-          .maybeSingle();
-        if (oErr) throw oErr;
-        if (!orderView) throw new Error('견적서를 찾을 수 없습니다.');
-
-        const { data: itemsData } = await supabase
-          .from('order_items')
-          .select('*')
-          .eq('order_id', orderId)
-          .is('deleted_at', null)
-          .order('seq', { ascending: true });
-
-        const { data: matchRow } = await supabase
-          .from('order_mail_learning_matches')
-          .select('*')
-          .eq('order_id', orderId)
-          .maybeSingle();
-
-        let mailRow: MailMessage | null = null;
-        if (matchRow?.mail_message_id) {
-          const { data: m } = await supabase
-            .from('mail_messages')
-            .select('*')
-            .eq('id', matchRow.mail_message_id)
-            .maybeSingle();
-          mailRow = (m as MailMessage) || null;
-        }
-
-        if (!cancelled) {
-          setOrder(orderView as OrderWithPartner);
-          setItems((itemsData || []) as OrderItem[]);
-          setMatch((matchRow as OrderMailLearningMatchRow) || null);
-          setMail(mailRow);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : '불러오기 실패');
-      } finally {
-        if (!cancelled) setLoading(false);
+          .in('id', mailIds);
+        for (const m of (mails || []) as MailMessage[]) map.set(m.id, m);
       }
-    })();
-    return () => { cancelled = true; };
+
+      const { match: primary } = derivePrimaryMatch(allMatches);
+      setOrder(orderView as OrderWithPartner);
+      setItems((itemsData || []) as OrderItem[]);
+      setMatches(allMatches);
+      setMailById(map);
+      setSelectedMailId(primary?.mail_message_id ?? mailIds[0] ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '불러오기 실패');
+    } finally {
+      setLoading(false);
+    }
   }, [orderId]);
 
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const candidates = useMemo(
+    () => matches
+      .filter(m => m.status === 'candidate' || m.status === 'matched' || m.status === 'rejected')
+      .filter(m => m.mail_message_id != null)
+      .sort((a, b) => {
+        if (a.status === 'matched' && b.status !== 'matched') return -1;
+        if (b.status === 'matched' && a.status !== 'matched') return 1;
+        return Number(b.score || 0) - Number(a.score || 0);
+      }),
+    [matches],
+  );
+
+  const primary = useMemo(() => derivePrimaryMatch(matches).match, [matches]);
+  const mail = selectedMailId != null ? mailById.get(selectedMailId) ?? null : null;
+  const activeMatch = candidates.find(c => c.mail_message_id === selectedMailId) || primary;
   const bodyPreview = useMemo(() => (mail ? displayMailBody(mail) : ''), [mail]);
+
   const evidenceFields = useMemo(() => {
-    const ev = match?.evidence as { fields?: EvidenceField[] } | null;
-    return Array.isArray(ev?.fields) ? ev!.fields! : [];
-  }, [match]);
+    const ev = activeMatch?.evidence as { fields?: EvidenceField[]; extracted_ref?: string } | null;
+    if (Array.isArray(ev?.fields) && ev!.fields!.length) return ev!.fields!;
+    // Ref 로컬 매칭 evidence → 간단한 필드 도식
+    if (ev && (ev.extracted_ref || (ev as { order_doc_no?: string }).order_doc_no)) {
+      return [{
+        order_field: 'doc_no',
+        order_value: order?.doc_no || '',
+        mail_evidence: String(ev.extracted_ref || ''),
+        source: 'subject/body',
+        matched: true,
+      }];
+    }
+    return [];
+  }, [activeMatch, order]);
+
+  const confirmSelect = async () => {
+    if (selectedMailId == null) return;
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const { data: conflict } = await supabase
+        .from('order_mail_learning_matches')
+        .select('order_id')
+        .eq('mail_message_id', selectedMailId)
+        .eq('status', 'matched')
+        .neq('order_id', orderId)
+        .maybeSingle();
+      if (conflict) {
+        throw new Error(`이 메일은 이미 다른 견적(#${conflict.order_id})에 확정되어 있습니다.`);
+      }
+
+      for (const r of matches) {
+        if (!r.id) continue;
+        if (r.mail_message_id === selectedMailId) {
+          const { error: uErr } = await supabase
+            .from('order_mail_learning_matches')
+            .update({
+              status: 'matched',
+              matched_at: new Date().toISOString(),
+              error_message: null,
+            })
+            .eq('id', r.id);
+          if (uErr) throw uErr;
+        } else if (r.mail_message_id != null && (r.status === 'candidate' || r.status === 'matched')) {
+          const { error: uErr } = await supabase
+            .from('order_mail_learning_matches')
+            .update({ status: 'rejected' })
+            .eq('id', r.id);
+          if (uErr) throw uErr;
+        }
+      }
+      setInfo('이 메일로 확정했습니다.');
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '확정 실패');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -98,44 +182,51 @@ export function OrderMailMatchDetailView() {
     );
   }
 
-  if (error || !order) {
+  if (error && !order) {
     return (
       <div className="space-y-3">
         <BackLink />
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error || '데이터 없음'}
+          {error}
         </div>
       </div>
     );
   }
 
-  const matched = match?.status === 'matched' && mail;
+  if (!order) return null;
+
+  const confirmed = primary?.status === 'matched';
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <BackLink />
-        <div className="flex items-center gap-2">
-          {!match && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!primary && (
             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2.5 py-1 text-xs font-semibold">
               미실행 — 목록에서 「매칭」을 먼저 실행하세요
             </span>
           )}
-          {match?.status === 'matched' && (
+          {confirmed && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2.5 py-1 text-xs font-semibold">
               <Link2 className="w-3.5 h-3.5" />
-              매칭 {match.score != null ? `${Math.round(Number(match.score) * 100)}%` : ''}
-              {match.engine_version ? ` · ${match.engine_version}` : ''}
+              확정 {primary?.score != null ? `${Math.round(Number(primary.score) * 100)}%` : ''}
             </span>
           )}
-          {match?.status === 'unmatched' && (
+          {!confirmed && candidates.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-800 px-2.5 py-1 text-xs font-semibold">
+              <Layers className="w-3.5 h-3.5" />
+              후보 {candidates.length} — 아래에서 선택·확정
+            </span>
+          )}
+          {primary?.status === 'unmatched' && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 px-2.5 py-1 text-xs font-semibold">
               <Unlink className="w-3.5 h-3.5" />
               비매칭
             </span>
           )}
-          {match?.status === 'failed' && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 px-2.5 py-1 text-xs font-semibold" title={match.error_message || ''}>
+          {primary?.status === 'failed' && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 px-2.5 py-1 text-xs font-semibold" title={primary.error_message || ''}>
               <AlertTriangle className="w-3.5 h-3.5" />
               실패
             </span>
@@ -146,13 +237,81 @@ export function OrderMailMatchDetailView() {
       <div>
         <h1 className="text-lg font-bold text-slate-900 tracking-tight">상세비교 · {order.doc_no}</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          저장된 견적↔메일 키 매칭 결과입니다. 좌측 메일 / 우측 견적 (금액·단가 제외 필드 중심).
+          견적번호(Ref) 키 매칭. 후보가 여러 개면 메일을 고른 뒤 「이 메일로 확정」을 누르세요.
         </p>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+      )}
+      {info && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{info}</div>
+      )}
+
+      {candidates.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-[11px] font-bold text-slate-500">후보 메일 ({candidates.length})</p>
+            {selectedMailId != null && !confirmed && (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void confirmSelect()}
+                className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                <Check className="w-3.5 h-3.5" />
+                이 메일로 확정
+              </button>
+            )}
+            {confirmed && selectedMailId === primary?.mail_message_id && (
+              <span className="text-[11px] font-semibold text-emerald-700">현재 확정된 메일입니다</span>
+            )}
+          </div>
+          <div className="space-y-1.5 max-h-56 overflow-y-auto">
+            {candidates.map(c => {
+              const m = c.mail_message_id != null ? mailById.get(c.mail_message_id) : null;
+              const active = c.mail_message_id === selectedMailId;
+              const ev = c.evidence as { extracted_ref?: string } | null;
+              return (
+                <button
+                  key={c.id ?? c.mail_message_id}
+                  type="button"
+                  onClick={() => setSelectedMailId(c.mail_message_id)}
+                  className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
+                    active
+                      ? 'border-indigo-400 bg-indigo-50 ring-1 ring-indigo-200'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 truncate">
+                        {m?.subject || '(제목 없음)'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {m?.from_addr} · {m ? formatReceivedAtKst(m.received_at) : ''}
+                        {ev?.extracted_ref ? ` · Ref ${ev.extracted_ref}` : ''}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-bold tabular-nums text-slate-700">
+                        {c.score != null ? `${Math.round(Number(c.score) * 100)}%` : '—'}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-400">
+                        {c.status === 'matched' ? '확정' : c.status === 'rejected' ? '미선택' : '후보'}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {evidenceFields.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm overflow-x-auto">
-          <p className="text-[11px] font-bold text-slate-500 mb-2 px-1">필드 매핑 도식 (메일 → 견적)</p>
+          <p className="text-[11px] font-bold text-slate-500 mb-2 px-1">필드 매핑 (메일 → 견적)</p>
           <div className="min-w-[640px] space-y-1.5">
             {evidenceFields.slice(0, 16).map((e, i) => {
               const ok = e.matched !== false && !!e.mail_evidence;
@@ -187,7 +346,7 @@ export function OrderMailMatchDetailView() {
                 <p className="text-[11px] text-slate-500 mt-0.5">{mail.from_addr} · {formatReceivedAtKst(mail.received_at)}</p>
               </>
             ) : (
-              <p className="text-sm text-amber-800 mt-1">매칭된 메일이 없습니다.</p>
+              <p className="text-sm text-amber-800 mt-1">표시할 메일이 없습니다.</p>
             )}
           </header>
           {mail && (
@@ -256,13 +415,13 @@ export function OrderMailMatchDetailView() {
         </section>
       </div>
 
-      {!matched && (
+      {candidates.length === 0 && (
         <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 text-sm text-amber-900">
-          {match?.status === 'unmatched'
-            ? '엔진이 15일 후보 안에서 적합한 메일을 찾지 못했습니다.'
-            : match?.status === 'failed'
-              ? `매칭 실패: ${match.error_message || '오류'}`
-              : '아직 매칭을 실행하지 않았습니다. 학습샘플 목록에서 「매칭」을 눌러 주세요.'}
+          {primary?.status === 'unmatched'
+            ? (primary.error_message || '라벨 메일에서 견적번호(Ref) 후보를 찾지 못했습니다.')
+            : primary?.status === 'failed'
+              ? `매칭 실패: ${primary.error_message || '오류'}`
+              : '아직 매칭을 실행하지 않았습니다. 학습샘플 목록에서 「매칭」또는 「전체 매칭」을 눌러 주세요.'}
         </div>
       )}
     </div>
