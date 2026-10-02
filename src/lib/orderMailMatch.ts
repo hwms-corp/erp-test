@@ -224,23 +224,42 @@ function includesLoose(hay: string, needle: string): boolean {
 /**
  * 로컬 Ref 매칭 (첨부·기간 없음).
  * score = Ref 유사도(주) + 거래처/담당 가산(최대 ~0.15)
+ * onProgress(checked, total) 로 실시간 00/00 보고. 매 N통마다 yield해 UI 갱신.
  */
-export function localMatchOrderToMails(
+export async function localMatchOrderToMails(
   order: Pick<OrderWithPartner, 'doc_no' | 'partner_name' | 'contact_person'>,
   partnerEmail: string | null,
   mails: MailMessage[],
-  opts?: { minRefScore?: number; maxCandidates?: number },
-): LocalMailMatchHit[] {
+  opts?: {
+    minRefScore?: number;
+    maxCandidates?: number;
+    signal?: AbortSignal;
+    onProgress?: (checked: number, total: number, hitCount: number) => void;
+    /** UI yield 주기 (메일 수). 기본 25 */
+    yieldEvery?: number;
+  },
+): Promise<LocalMailMatchHit[]> {
   const minRef = opts?.minRefScore ?? 0.82;
   const maxN = opts?.maxCandidates ?? 20;
+  const yieldEvery = opts?.yieldEvery ?? 25;
   const docNo = (order.doc_no || '').trim();
-  if (!docNo) return [];
+  if (!docNo) {
+    opts?.onProgress?.(0, mails.length, 0);
+    return [];
+  }
 
   const hints = buildPartnerNameHints(order.partner_name, partnerEmail);
   const contact = (order.contact_person || '').trim();
   const hits: LocalMailMatchHit[] = [];
+  const total = mails.length;
 
-  for (const mail of mails) {
+  for (let i = 0; i < mails.length; i += 1) {
+    if (opts?.signal?.aborted) {
+      const err = new Error('사용자가 매칭을 중단했습니다');
+      err.name = 'AbortError';
+      throw err;
+    }
+    const mail = mails[i];
     const hay = [mail.subject, mail.snippet, mail.body_text, mail.from_addr].filter(Boolean).join('\n');
     const refs = extractRefCandidates(hay);
     let bestRef: string | null = null;
@@ -261,45 +280,53 @@ export function localMatchOrderToMails(
         bestRef = docNo;
       }
     }
-    if (bestRefScore < minRef) continue;
 
-    let bonus = 0;
-    const reasons = ['ref_match'];
-    const fromHay = (mail.from_addr || '').toLowerCase();
-    const hayLow = hay.toLowerCase();
-    const email = (partnerEmail || '').trim().toLowerCase();
-    if (email && fromHay.includes(email)) {
-      bonus += 0.08;
-      reasons.push('partner_email_from');
-    } else {
-      for (const h of hints) {
-        if (h.includes('@')) continue;
-        if (includesLoose(hayLow, h) || includesLoose(fromHay, h)) {
-          bonus += 0.05;
-          reasons.push('partner_hint');
-          break;
+    if (bestRefScore >= minRef) {
+      let bonus = 0;
+      const reasons = ['ref_match'];
+      const fromHay = (mail.from_addr || '').toLowerCase();
+      const hayLow = hay.toLowerCase();
+      const email = (partnerEmail || '').trim().toLowerCase();
+      if (email && fromHay.includes(email)) {
+        bonus += 0.08;
+        reasons.push('partner_email_from');
+      } else {
+        for (const h of hints) {
+          if (h.includes('@')) continue;
+          if (includesLoose(hayLow, h) || includesLoose(fromHay, h)) {
+            bonus += 0.05;
+            reasons.push('partner_hint');
+            break;
+          }
         }
       }
-    }
-    if (contact.length >= 2 && includesLoose(hayLow, contact)) {
-      bonus += 0.04;
-      reasons.push('contact');
+      if (contact.length >= 2 && includesLoose(hayLow, contact)) {
+        bonus += 0.04;
+        reasons.push('contact');
+      }
+
+      const score = Math.min(1, bestRefScore + bonus);
+      hits.push({
+        mail,
+        score,
+        extracted_ref: bestRef,
+        reasons,
+        evidence: {
+          extracted_ref: bestRef,
+          ref_score: bestRefScore,
+          order_doc_no: docNo,
+          normalized_ref: normalizeRef(bestRef),
+          normalized_doc_no: normalizeRef(docNo),
+        },
+      });
     }
 
-    const score = Math.min(1, bestRefScore + bonus);
-    hits.push({
-      mail,
-      score,
-      extracted_ref: bestRef,
-      reasons,
-      evidence: {
-        extracted_ref: bestRef,
-        ref_score: bestRefScore,
-        order_doc_no: docNo,
-        normalized_ref: normalizeRef(bestRef),
-        normalized_doc_no: normalizeRef(docNo),
-      },
-    });
+    const checked = i + 1;
+    if (checked === 1 || checked === total || checked % yieldEvery === 0) {
+      opts?.onProgress?.(checked, total, hits.length);
+      // React setState가 그려지도록 양보
+      await new Promise<void>(r => setTimeout(r, 0));
+    }
   }
 
   hits.sort((a, b) => {

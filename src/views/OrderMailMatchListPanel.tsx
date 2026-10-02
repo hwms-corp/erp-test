@@ -166,7 +166,7 @@ export function OrderMailMatchListPanel() {
       {(loading || progress || busy) && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 flex flex-wrap items-center gap-2">
           {(loading || busy) && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
-          <span className="flex-1 min-w-0">
+          <span className="flex-1 min-w-0 tabular-nums">
             {progress || (loading ? '불러오는 중…' : '매칭 진행 중…')}
             {matchingOrderId != null ? ` · 견적 #${matchingOrderId}` : ''}
             {queueActive ? ` · 큐 ${queueDone}/${queueTotal}` : ''}
