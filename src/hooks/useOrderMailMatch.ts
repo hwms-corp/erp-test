@@ -225,18 +225,13 @@ export function useOrderMailMatch() {
         };
       });
 
+      // 전체 목록: 매칭 상태와 무관하게 견적일 최신 → 오래된 순 고정
       list.sort((a, b) => {
-        const rank = (x: LearningOrderListItem) => {
-          if (x.match?.status === 'matched') return 2;
-          if (x.candidateCount > 0) return 1;
-          if (x.match?.status === 'failed') return 3;
-          if (x.match?.status === 'unmatched') return 1;
-          return 0; // pending
-        };
-        const ra = rank(a);
-        const rb = rank(b);
-        if (ra !== rb) return ra - rb;
-        return (b.order.order_date || '').localeCompare(a.order.order_date || '');
+        const byDate = (b.order.order_date || '').localeCompare(a.order.order_date || '');
+        if (byDate !== 0) return byDate;
+        const aCreated = a.order.created_at || '';
+        const bCreated = b.order.created_at || '';
+        return bCreated.localeCompare(aCreated);
       });
 
       setRows(list);
