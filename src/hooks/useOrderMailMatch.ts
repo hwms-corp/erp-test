@@ -651,9 +651,10 @@ export function useOrderMailMatch() {
         }
         done += 1;
         setQueueDone(done);
-        setMatchingOrderId(null);
+        // matchingOrderId는 다음 건 matchOneInternal에서 바로 갱신 — 중간에 null로 끊지 않음(말풍선 전환용)
       }
       setProgress(`전체 매칭 완료 · ${done}/${queue.length}`);
+      setMatchingOrderId(null);
     } catch (e) {
       const aborted =
         (e instanceof Error && (e.name === 'AbortError' || e.message.includes('중단'))) ||

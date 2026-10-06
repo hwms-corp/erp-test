@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   RefreshCw, Search, Link2, Unlink, ArrowRight, Loader2, RotateCcw,
@@ -54,6 +55,33 @@ export function OrderMailMatchListPanel() {
 
   useEffect(() => { setPage(1); }, [filter, q]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  // 매칭 중인 견적이 다른 페이지에 있으면 그 페이지로 이동
+  useEffect(() => {
+    if (matchingOrderId == null) return;
+    const idx = filtered.findIndex(r => r.order.id === matchingOrderId);
+    if (idx < 0) return;
+    const targetPage = Math.floor(idx / pageSize) + 1;
+    if (targetPage !== page) setPage(targetPage);
+  }, [matchingOrderId, filtered, pageSize, page]);
+
+  // 활성 row로 부드럽게 스크롤·포커스
+  useEffect(() => {
+    if (matchingOrderId == null) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-match-order-id="${matchingOrderId}"]`,
+      );
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        /* ignore */
+      }
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [matchingOrderId, page]);
 
   const pendingCount = rows.filter(r => !r.match).length;
   const candidateOnlyCount = rows.filter(r => r.candidateCount > 0 && r.match?.status !== 'matched').length;
@@ -164,25 +192,23 @@ export function OrderMailMatchListPanel() {
           {error}
         </div>
       )}
-      {(loading || progress || busy) && (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 flex flex-wrap items-center gap-2">
-          {(loading || busy) && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
-          <span className="flex-1 min-w-0 tabular-nums">
-            {progress || (loading ? '불러오는 중…' : '매칭 진행 중…')}
-            {matchingOrderId != null ? ` · 견적 #${matchingOrderId}` : ''}
-            {queueActive ? ` · 큐 ${queueDone}/${queueTotal}` : ''}
-          </span>
-          {busy && (
-            <button
-              type="button"
-              onClick={() => cancelMatch()}
-              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"
-            >
-              <Ban className="w-3.5 h-3.5" />
-              강제 중단
-            </button>
-          )}
+
+      {loading && !busy && (
+        <div className="flex items-center gap-2 text-sm text-slate-500 px-0.5">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>{progress || '불러오는 중…'}</span>
         </div>
+      )}
+
+      {busy && matchingOrderId != null && (
+        <MatchProgressBubble
+          orderId={matchingOrderId}
+          progress={progress}
+          queueActive={queueActive}
+          queueDone={queueDone}
+          queueTotal={queueTotal}
+          onCancel={cancelMatch}
+        />
       )}
 
       {!loading && (
@@ -240,6 +266,121 @@ export function OrderMailMatchListPanel() {
   );
 }
 
+/** 활성 매칭 row 위에 따라다니는 말풍선 (row 전환 시 위치 애니메이션) */
+function MatchProgressBubble({
+  orderId,
+  progress,
+  queueActive,
+  queueDone,
+  queueTotal,
+  onCancel,
+}: {
+  orderId: number;
+  progress: string;
+  queueActive: boolean;
+  queueDone: number;
+  queueTotal: number;
+  onCancel: () => void;
+}) {
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [ready, setReady] = useState(false);
+  const firstPosRef = useRef(true);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const el = document.querySelector<HTMLElement>(`[data-match-order-id="${orderId}"]`);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const next = {
+        top: rect.top,
+        left: rect.left + rect.width / 2,
+        width: Math.min(Math.max(rect.width * 0.72, 260), 440),
+      };
+      setPos(prev => {
+        if (
+          prev &&
+          Math.abs(prev.top - next.top) < 0.5 &&
+          Math.abs(prev.left - next.left) < 0.5 &&
+          Math.abs(prev.width - next.width) < 0.5
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      if (firstPosRef.current) {
+        firstPosRef.current = false;
+        // 첫 좌표 잡은 뒤 transition 켜기 (초기 점프 방지)
+        requestAnimationFrame(() => setReady(true));
+      }
+    };
+
+    update();
+    const interval = window.setInterval(update, 100);
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [orderId]);
+
+  if (!pos || typeof document === 'undefined') return null;
+
+  const label = progress?.trim() || '매칭 진행 중…';
+
+  return createPortal(
+    <div
+      className={`pointer-events-auto fixed z-[60] ${ready ? 'order-match-bubble' : ''}`}
+      style={{
+        top: pos.top - 10,
+        left: pos.left,
+        width: pos.width,
+        transform: 'translate(-50%, -100%)',
+        opacity: ready ? 1 : 0,
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        key={orderId}
+        className="order-match-bubble-card rounded-xl border border-teal-300/80 bg-white/95 px-3 py-2.5 shadow-lg shadow-teal-900/10 backdrop-blur-sm"
+      >
+        <div className="flex items-start gap-2">
+          <Loader2 className="mt-0.5 w-4 h-4 animate-spin text-teal-600 shrink-0" />
+          <div className="min-w-0 flex-1">
+            {queueActive && (
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-700/80 tabular-nums mb-0.5">
+                전체 매칭 {queueDone + 1}/{queueTotal}
+              </p>
+            )}
+            <p className="text-xs font-medium text-slate-700 leading-snug break-words">
+              {label}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-100"
+          >
+            <Ban className="w-3 h-3" />
+            중단
+          </button>
+        </div>
+      </div>
+      <div
+        className="mx-auto h-0 w-0 border-x-[7px] border-x-transparent border-t-[8px] border-t-teal-300/80"
+        aria-hidden
+      />
+      <div
+        className="-mt-[9px] mx-auto h-0 w-0 border-x-[6px] border-x-transparent border-t-[7px] border-t-white"
+        aria-hidden
+      />
+    </div>,
+    document.body,
+  );
+}
+
 function MatchRow({
   row,
   busy,
@@ -258,36 +399,51 @@ function MatchRow({
   const st = row.match?.status;
   const hasCandidates = row.candidateCount > 0 && st !== 'matched';
   return (
-    <tr className="hover:bg-slate-50/80">
+    <tr
+      data-match-order-id={row.order.id}
+      tabIndex={busy ? -1 : undefined}
+      className={`order-match-row outline-none ${
+        busy ? 'order-match-row-active' : 'hover:bg-slate-50/80'
+      }`}
+    >
       <td className="px-3 py-2.5 whitespace-nowrap">
-        {!st && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[11px] font-semibold">
-            미실행
+        {busy ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-teal-600 text-white px-2 py-0.5 text-[11px] font-semibold shadow-sm">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            진행중
           </span>
-        )}
-        {st === 'matched' && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-semibold">
-            <Link2 className="w-3 h-3" />
-            확정
-          </span>
-        )}
-        {hasCandidates && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-800 px-2 py-0.5 text-[11px] font-semibold">
-            <Layers className="w-3 h-3" />
-            후보 {row.candidateCount}
-          </span>
-        )}
-        {st === 'unmatched' && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 px-2 py-0.5 text-[11px] font-semibold">
-            <Unlink className="w-3 h-3" />
-            비매칭
-          </span>
-        )}
-        {st === 'failed' && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-[11px] font-semibold" title={row.match?.error_message || ''}>
-            <AlertTriangle className="w-3 h-3" />
-            실패
-          </span>
+        ) : (
+          <>
+            {!st && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-[11px] font-semibold">
+                미실행
+              </span>
+            )}
+            {st === 'matched' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-[11px] font-semibold">
+                <Link2 className="w-3 h-3" />
+                확정
+              </span>
+            )}
+            {hasCandidates && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-800 px-2 py-0.5 text-[11px] font-semibold">
+                <Layers className="w-3 h-3" />
+                후보 {row.candidateCount}
+              </span>
+            )}
+            {st === 'unmatched' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-800 px-2 py-0.5 text-[11px] font-semibold">
+                <Unlink className="w-3 h-3" />
+                비매칭
+              </span>
+            )}
+            {st === 'failed' && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 px-2 py-0.5 text-[11px] font-semibold" title={row.match?.error_message || ''}>
+                <AlertTriangle className="w-3 h-3" />
+                실패
+              </span>
+            )}
+          </>
         )}
       </td>
       <td className="px-3 py-2.5 font-medium text-slate-800 whitespace-nowrap">{row.order.doc_no}</td>
