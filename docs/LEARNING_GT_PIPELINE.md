@@ -1,63 +1,37 @@
-# 학습 GT 파이프라인 (erp-test → mail-ai-api)
+# 학습 GT 파이프라인 (erp-test ↔ mail-ai-api)
 
-> **목표:** mail-ai-api가 메일(제목·본문·송신자) + **첨부(특히 품목)** 를  
-> 정확히 추출·분류해 견적서에 자동 저장할 수 있을 때까지 정확도를 끌어올린다.  
-> `order_mail_learning_matches(status=matched)` 는 그 **정답지(GT)** 이다.
+> **목표:** mail-ai-api 메일 추출·분류 정확도 향상 (특히 첨부·품목).  
+> GT = ERP `order_mail_learning_matches` 에서 **status=matched** 인 사람 확정분.
 
-## 운영 원칙 (중요)
-1. **지금은 프로그램·로직·스키마를 먼저 완성**한다.  
-2. **matched 실데이터 적립·스냅샷 전달은 나중에** (시간 날 때 UI로 쌓고 export).  
-3. 개발/검증은 **fixture JSONL** 로 파이프라인을 돌린다 (`npm run learning-gt:pipeline`).  
-4. 매칭 직후 API push / 요청마다 재학습은 **하지 않음**.
+## 사람 조작 (버튼 2개만)
+| 위치 | 버튼 | 동작 |
+|------|------|------|
+| ERP 학습샘플 | **매칭** (·전체 매칭·상세 확정) | 확정 결과를 DB에 저장 |
+| mail-ai-api admin **기존데이터 학습** | **학습** | DB matched를 pull → **누적** 학습 → 개선 팩을 추출/분류에 적용 |
 
-## 구현 순서 (프로그램 우선)
+- ERP **JSON 다운로드 / GT 스냅샷 버튼 없음** (제거됨).
+- 확정 시 mail-ai-api로 자동 push 하지 않음. admin이 DB에서 불러옴.
 
-| 단계 | 담당 | 내용 | 상태 |
-|------|------|------|------|
-| **P0** | erp-test | GT 스키마 · export · DB 뷰 · **eval/lexicon/templates/A-of-B/fail-bank 라이브러리** · fixture CLI | **진행** |
-| **P1** | mail-ai-api | 동일 스키마로 pull 어댑터 + **회귀 eval 러너** (fixture로 먼저) | 다음 |
-| **P2** | mail-ai-api | 첨부 OCR·표·재검증 파이프라인 (품목 핵심) + eval 연동 | |
-| **P3** | mail-ai-api | 본문 추출 · lexicon/템플릿 라우팅 · A of B 규칙 | |
-| **P4** | 양쪽 | 실패 뱅크 → 개선 루프 · 배포 게이트 | |
-| **D0** | 사람 | (나중에) matched 적립 → GT 스냅샷 → 실데이터 eval | 데이터 단계 |
-
----
-
-## P0 — erp-test 프로그램 (데이터 불필요)
-
-### 라이브러리 (`src/lib/`)
-| 모듈 | 역할 |
-|------|------|
-| `learningGt.ts` | 스냅샷 스키마 · matched export (실데이터 있을 때) |
-| `learningGtEval.ts` | **gold vs pred** — `line_item_accuracy` 최중요 |
-| `learningGtLexicon.ts` | 용어·단위·제목 히트율 |
-| `learningGtTemplates.ts` | from 도메인 양식 클러스터 |
-| `learningGtOfAmbiguity.ts` | A of B / A/B 중의성 예제 |
-| `learningGtFailBank.ts` | 실패 유형 뱅크 |
-
-### CLI
-```bash
-npm run learning-gt:pipeline
+## 데이터 흐름
 ```
-fixture → lexicon/templates/of-ambiguity/eval/fail-bank 산출 (`scripts/learning-gt/results/`).
+ERP 「매칭」→ order_mail_learning_matches(matched) + mail/order/items
+        ↓  (pull)
+admin「기존데이터 학습」리스트
+        ↓  「학습」
+이전 디폴트 개선팩 + 신규 matched → 새 디폴트 개선팩 저장
+        ↓
+classify / extract 런타임이 개선팩 사용
+```
 
-실데이터 쓸 때: UI 「GT 스냅샷」JSONL을 같은 형식으로 `run-pipeline`에 넣거나 mail-ai-api가 로드.
+## 누적 학습
+- 학습 결과는 **새 디폴트**로 저장.
+- 다음 학습 = 기존 디폴트 + 추가로 쌓인 matched (처음부터 재학습 아님).
+- 모델 파인튜닝이 아니라, 추출/분류 정확도용 **규칙·사전·양식·조건 팩** 갱신.
 
-### DB
-`v_learning_gt_matched` — 엔진 pull용 뷰 (데이터 없어도 뷰는 존재).
+## ERP 측
+- 매칭/확정 UI, DB, 뷰 `v_learning_gt_matched`
+- 스키마·eval 참고 라이브러리·fixture CLI는 개발/검증용으로 유지 (`npm run learning-gt:pipeline`)
+- export 다운로드 UI 없음
 
----
-
-## P1 — mail-ai-api (체크리스트)
-`docs/LEARNING_GT_MAIL_AI_API.md`  
-먼저 fixture/스키마로 eval 러너만 만들고, 실 matched는 나중에 연결.
-
-## 샘플 스키마
-`samples.jsonl` 1행 = `{ gt_id, mail, gold, order, match }`  
-`gold.items[]` = 추출·분류 정답(품목). 첨부 바이너리는 id만.
-
-## 역할
-| | erp-test | mail-ai-api |
-|--|----------|-------------|
-| 프로그램 | 스키마·지표·파생자산 빌더 | extract/OCR + eval 러너 |
-| 데이터(나중) | matched 확정·스냅샷 | pull 후 회귀 |
+## mail-ai-api 측 (admin)
+상세: `docs/LEARNING_GT_MAIL_AI_API.md`

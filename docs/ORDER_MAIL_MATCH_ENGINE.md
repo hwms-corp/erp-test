@@ -143,6 +143,8 @@ ERP는 이미 라벨 필터된 메일만 넘긴다. 엔진은 **입력 후보만
 견적당 `matched` 최대 1, 메일당 `matched` 최대 1.
 
 ## 학습 GT (추출·분류 정확도용)
-매칭 직후 API push 없음. erp-test **「GT 스냅샷」** 또는 뷰 `v_learning_gt_matched` 로 pull.  
+ERP는 매칭·확정만 DB에 저장. JSON 다운로드 없음.  
+mail-ai-api admin **「기존데이터 학습」** 이 `matched` / `v_learning_gt_matched` 를 pull 후 「학습」(누적).  
 → `docs/LEARNING_GT_PIPELINE.md` · `docs/LEARNING_GT_MAIL_AI_API.md`
+
 

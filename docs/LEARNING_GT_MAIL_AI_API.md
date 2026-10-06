@@ -1,24 +1,30 @@
-# mail-ai-api: GT 프로그램 · eval 체크리스트
+# mail-ai-api: 기존데이터 학습 (admin)
 
-**지금은 실 matched 전달보다, fixture/스키마로 eval·OCR 프로그램을 먼저.**  
-erp-test: `npm run learning-gt:pipeline` · `docs/LEARNING_GT_PIPELINE.md`
+erp-test는 **매칭·DB 저장만** 담당. JSON 수동 전달 없음.  
+admin이 Supabase/ERP DB에서 `matched`를 pull 한다.
 
-## P1 프로그램 (데이터 나중)
-- [ ] `samples.jsonl` 스키마 파서 (erp fixture와 동일)
-- [ ] gold vs extract 비교 — **`line_item_accuracy` 필수**, field_exact, classify
-- [ ] snapshot 디렉터리 고정 로더 (`gt_snapshots/{id}/`)
-- [ ] 첨부 id → 바이너리 로드 어댑터 (stub OK)
-- [ ] `summary.json` / `details.json` / fail_bank 출력
-- [ ] fixture만으로 CI 스모크
+## 메뉴
+- 기존「추출채점」을 확장하고 메뉴명을 **「기존데이터 학습」** 으로 변경.
+- 새 메뉴는 꼭 필요할 때만.
 
-## P2+ (추출 정확도)
-- [ ] 첨부 OCR·표·재검증 + 품목 eval 연동
-- [ ] lexicon/templates 라우팅
-- [ ] A of B 규칙
-
-## 실데이터 연결 (나중에)
-- [ ] erp 「GT 스냅샷」또는 `v_learning_gt_matched` pull
-- [ ] 배포 게이트: 이전 snapshot 대비 회귀 차단
+## 필수 기능
+1. **학습용 리스트 불러오기**  
+   - `order_mail_learning_matches` where `status='matched'`  
+   - 조인: mail_messages, mail_attachments(메타), orders, order_items, partners  
+   - 뷰 참고: `v_learning_gt_matched` (+ items 별도)
+2. **「학습」버튼 (누적)**  
+   - 입력: 현재 디폴트 개선팩(없으면 빈 상태) + DB matched 전체(또는 미학습 신규분+기존 팩)  
+   - 출력: 추출/분류 정확도 개선용 팩 (lexicon, 양식 클러스터, 단어/위치 힌트, A of B 조건 등)  
+   - 저장: **새 디폴트**로 덮어쓰기/버전 저장  
+   - 다음 학습 시 이 디폴트를 이어받음 (풀 재학습 금지)
+3. **런타임 적용**  
+   - classify / extract 호출 시 최신 디폴트 개선팩을 사용
 
 ## 하지 말 것
-- matched 변경마다 자동 재학습 / 실시간 push
+- ERP에서 JSON 파일 업로드를 요구
+- matched 변경마다 자동 재학습 (「학습」버튼만)
+- 모델 파인튜닝을 필수로 가정
+
+## ERP 참고
+- `docs/LEARNING_GT_PIPELINE.md`
+- 스키마/지표 참고: erp-test `src/lib/learningGt*.ts`, `scripts/learning-gt/fixtures/`

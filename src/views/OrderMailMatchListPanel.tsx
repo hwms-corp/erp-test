@@ -2,17 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   RefreshCw, Search, Link2, Unlink, ArrowRight, Loader2, RotateCcw,
-  AlertTriangle, Ban, Play, Layers, Download,
+  AlertTriangle, Ban, Play, Layers,
 } from 'lucide-react';
 import { useOrderMailMatch } from '@/hooks/useOrderMailMatch';
 import { Pagination, usePagination } from '@/components/Pagination';
 import { formatReceivedAtKst } from '@/lib/mailTime';
 import { QUOTE_MAIL_LABEL_NAME, type LearningOrderListItem } from '@/lib/orderMailMatch';
-import {
-  buildLearningGtSnapshot,
-  countMatchedLearningGt,
-  downloadLearningGtSnapshot,
-} from '@/lib/learningGt';
 
 type Filter = 'all' | 'pending' | 'candidates' | 'matched' | 'unmatched' | 'failed';
 
@@ -24,43 +19,11 @@ export function OrderMailMatchListPanel() {
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
-  const [gtExporting, setGtExporting] = useState(false);
-  const [gtProgress, setGtProgress] = useState('');
-  const [matchedGtCount, setMatchedGtCount] = useState<number | null>(null);
   const busy = matchingOrderId != null || queueActive;
 
   useEffect(() => {
     void loadList();
   }, [loadList]);
-
-  useEffect(() => {
-    void countMatchedLearningGt()
-      .then(setMatchedGtCount)
-      .catch(() => setMatchedGtCount(null));
-  }, [rows]);
-
-  const exportGtSnapshot = async () => {
-    if (gtExporting || matchingOrderId != null || queueActive) return;
-    setGtExporting(true);
-    setGtProgress('GT 스냅샷 준비 중…');
-    try {
-      const snap = await buildLearningGtSnapshot({
-        onProgress: setGtProgress,
-      });
-      if (snap.samples.length === 0) {
-        alert('확정(matched)된 학습샘플이 없습니다. 먼저 매칭·확정하세요.');
-        return;
-      }
-      downloadLearningGtSnapshot(snap);
-      setMatchedGtCount(snap.samples.length);
-      setGtProgress(`GT 스냅샷 ${snap.manifest.snapshot_id} · ${snap.samples.length}건 다운로드`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'GT 스냅샷 실패');
-      setGtProgress('');
-    } finally {
-      setGtExporting(false);
-    }
-  };
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -98,8 +61,6 @@ export function OrderMailMatchListPanel() {
   const unmatchedCount = rows.filter(r => r.match?.status === 'unmatched').length;
   const failedCount = rows.filter(r => r.match?.status === 'failed').length;
   const queueableCount = rows.filter(r => r.match?.status !== 'matched').length;
-  // busy is defined above near exportGtSnapshot
-
 
   return (
     <div className="space-y-3">
@@ -114,30 +75,20 @@ export function OrderMailMatchListPanel() {
             </span>
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-            라벨 「{QUOTE_MAIL_LABEL_NAME}」메일만 · 기간/첨부 없음 · 키는 견적번호(Ref).
-            행별 「매칭」또는 「전체 매칭」큐. 후보가 여러 개면 상세에서 사람이 확정합니다.
-            확정분(matched)은 「GT 스냅샷」으로 mail-ai-api 학습/평가용 JSON을 내려받습니다.
+            라벨 「{QUOTE_MAIL_LABEL_NAME}」메일만 · 키는 견적번호(Ref).
+            「매칭」/「전체 매칭」후 확정분은 DB에 저장되며, mail-ai-api admin「기존데이터 학습」에서 불러와 학습합니다.
+            JSON 다운로드는 없습니다.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => void loadList()}
-            disabled={loading || busy || gtExporting}
+            disabled={loading || busy}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             목록 새로고침
-          </button>
-          <button
-            type="button"
-            disabled={loading || busy || gtExporting || (matchedGtCount === 0)}
-            onClick={() => void exportGtSnapshot()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
-            title="확정(matched)만 mail-ai-api용 JSON/JSONL로 저장"
-          >
-            {gtExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-            GT 스냅샷{matchedGtCount != null ? ` (${matchedGtCount})` : ''}
           </button>
           {queueActive ? (
             <button
@@ -213,11 +164,11 @@ export function OrderMailMatchListPanel() {
           {error}
         </div>
       )}
-      {(loading || progress || busy || gtProgress) && (
+      {(loading || progress || busy) && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 flex flex-wrap items-center gap-2">
-          {(loading || busy || gtExporting) && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+          {(loading || busy) && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
           <span className="flex-1 min-w-0 tabular-nums">
-            {gtProgress || progress || (loading ? '불러오는 중…' : '매칭 진행 중…')}
+            {progress || (loading ? '불러오는 중…' : '매칭 진행 중…')}
             {matchingOrderId != null ? ` · 견적 #${matchingOrderId}` : ''}
             {queueActive ? ` · 큐 ${queueDone}/${queueTotal}` : ''}
           </span>
