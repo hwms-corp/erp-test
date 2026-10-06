@@ -1,37 +1,46 @@
-# 학습 GT 파이프라인 (erp-test ↔ mail-ai-api)
+# 학습 GT 파이프라인 (B안)
 
-> **목표:** mail-ai-api 메일 추출·분류 정확도 향상 (특히 첨부·품목).  
-> GT = ERP `order_mail_learning_matches` 에서 **status=matched** 인 사람 확정분.
+> **목표:** 추출·분류 정확도(특히 첨부·품목).  
+> GT = `order_mail_learning_matches.status=matched`
 
-## 사람 조작 (버튼 2개만)
+## 사람 버튼 2개
 | 위치 | 버튼 | 동작 |
 |------|------|------|
-| ERP 학습샘플 | **매칭** (·전체 매칭·상세 확정) | 확정 결과를 DB에 저장 |
-| mail-ai-api admin **기존데이터 학습** | **학습** | DB matched를 pull → **누적** 학습 → 개선 팩을 추출/분류에 적용 |
+| ERP 학습샘플 | **매칭** | 텍스트로 견적↔메일 확정 → DB만 저장 (**첨부 base64 저장 안 함**) |
+| mail-ai-api admin **기존데이터 학습** | **학습** | ERP payload API로 **text+files[]+gold** 받아 기존 classify/extract 실행 → gold 비교 → 개선팩 **누적** |
 
-- ERP **JSON 다운로드 / GT 스냅샷 버튼 없음** (제거됨).
-- 확정 시 mail-ai-api로 자동 push 하지 않음. admin이 DB에서 불러옴.
+## B안 핵심
+- 실서비스와 동일: **클라이언트가 files[]를 넣어** 엔진 호출.
+- 학습 때 “클라이언트” = ERP Edge `learning-gt-payloads` (Gmail에서 첨부 조립).
+- mail-ai-api는 Gmail OAuth·첨부 URL을 **모름**. OCR은 엔진 한곳.
 
-## 데이터 흐름
 ```
-ERP 「매칭」→ order_mail_learning_matches(matched) + mail/order/items
-        ↓  (pull)
-admin「기존데이터 학습」리스트
-        ↓  「학습」
-이전 디폴트 개선팩 + 신규 matched → 새 디폴트 개선팩 저장
-        ↓
-classify / extract 런타임이 개선팩 사용
+Admin「학습」
+  → GET/POST {SUPABASE}/functions/v1/learning-gt-payloads
+       Header: X-Internal-Key: <LEARNING_INTERNAL_KEY>
+  ← samples[{ text, files[{filename,mime_type,content_base64}], gold }]
+  → 기존 classify/extract(text, files)
+  → gold(특히 items)와 diff → 개선팩 누적 (trained_ids 스킵)
 ```
 
-## 누적 학습
-- 학습 결과는 **새 디폴트**로 저장.
-- 다음 학습 = 기존 디폴트 + 추가로 쌓인 matched (처음부터 재학습 아님).
-- 모델 파인튜닝이 아니라, 추출/분류 정확도용 **규칙·사전·양식·조건 팩** 갱신.
+## ERP Edge: `learning-gt-payloads`
+- Secret: `LEARNING_INTERNAL_KEY` (+ 기존 `GMAIL_*`, `SUPABASE_*`)
+- `verify_jwt = false` (내부 키 인증)
+- 매칭 테이블에 첨부 본체를 넣지 **않음**. 학습 요청 시 Gmail on-demand.
 
-## ERP 측
-- 매칭/확정 UI, DB, 뷰 `v_learning_gt_matched`
-- 스키마·eval 참고 라이브러리·fixture CLI는 개발/검증용으로 유지 (`npm run learning-gt:pipeline`)
-- export 다운로드 UI 없음
+## mail-ai-api Railway
+```
+LEARNING_GT_PAYLOAD_URL=https://<PROJECT_REF>.supabase.co/functions/v1/learning-gt-payloads
+LEARNING_GT_PAYLOAD_KEY=<LEARNING_INTERNAL_KEY와 동일>
+LEARNING_GT_PAYLOAD_HEADER=X-Internal-Key   # 기본이면 생략 가능
+```
+`LEARNING_ATTACHMENT_URL` 방식(A안)은 쓰지 않음.
 
-## mail-ai-api 측 (admin)
-상세: `docs/LEARNING_GT_MAIL_AI_API.md`
+## 배포 (ERP)
+```bash
+npx supabase secrets set LEARNING_INTERNAL_KEY=긴랜덤키
+npx supabase functions deploy learning-gt-payloads --no-verify-jwt
+```
+
+상세 admin 지시: `docs/LEARNING_GT_MAIL_AI_API.md`  
+mail-ai-api 에이전트 복붙: `docs/LEARNING_GT_MAIL_AI_API_AGENT_PROMPT.md`

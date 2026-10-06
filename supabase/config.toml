@@ -4,3 +4,7 @@
 [functions.gmail-watch]
 # Pub/Sub push cannot send Supabase JWT — disable gateway JWT verify for this function.
 verify_jwt = false
+
+[functions.learning-gt-payloads]
+# mail-ai-api Admin uses X-Internal-Key (LEARNING_INTERNAL_KEY), not user JWT.
+verify_jwt = false
