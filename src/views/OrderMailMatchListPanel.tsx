@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   RefreshCw, Search, Link2, Unlink, ArrowRight, Loader2, RotateCcw,
-  AlertTriangle, Ban, Play, Layers,
+  AlertTriangle, Ban, Play, Layers, SkipForward, RotateCw,
 } from 'lucide-react';
 import { useOrderMailMatch } from '@/hooks/useOrderMailMatch';
 import { Pagination, usePagination } from '@/components/Pagination';
@@ -90,6 +90,29 @@ export function OrderMailMatchListPanel() {
   const failedCount = rows.filter(r => r.match?.status === 'failed').length;
   const queueableCount = rows.filter(r => r.match?.status !== 'matched').length;
 
+  /** 이어서 매칭: 마지막 확정(matched_at 최신) 다음 행부터의 미확정 건수 */
+  const continueCount = useMemo(() => {
+    const matched = rows.filter(r => r.match?.status === 'matched');
+    if (matched.length === 0) return 0;
+    let anchor = matched[0];
+    for (const r of matched) {
+      const aAt = anchor.match?.matched_at || '';
+      const bAt = r.match?.matched_at || '';
+      if (bAt > aAt) {
+        anchor = r;
+        continue;
+      }
+      if (bAt === aAt) {
+        const ai = rows.findIndex(x => x.order.id === anchor.order.id);
+        const bi = rows.findIndex(x => x.order.id === r.order.id);
+        if (bi > ai) anchor = r;
+      }
+    }
+    const idx = rows.findIndex(r => r.order.id === anchor.order.id);
+    if (idx < 0) return 0;
+    return rows.slice(idx + 1).filter(r => r.match?.status !== 'matched').length;
+  }, [rows]);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -128,22 +151,63 @@ export function OrderMailMatchListPanel() {
               전체 중단 ({queueDone}/{queueTotal})
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={loading || busy || queueableCount === 0}
-              onClick={() => {
-                if (!confirm(
-                  `미확정 견적 ${queueableCount}건을 순서대로 매칭할까요?\n` +
-                  `한 건이 끝나면 목록에 바로 반영되고 다음 견적으로 넘어갑니다.\n` +
-                  `(이미 확정된 건은 건너뜁니다)`,
-                )) return;
-                void matchAll();
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-            >
-              <Play className="w-3.5 h-3.5" />
-              전체 매칭 ({queueableCount})
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={loading || busy || queueableCount === 0}
+                onClick={() => {
+                  if (!confirm(
+                    `미확정 견적 ${queueableCount}건을 순서대로 매칭할까요?\n` +
+                    `한 건이 끝나면 목록에 바로 반영되고 다음 견적으로 넘어갑니다.\n` +
+                    `(이미 확정된 건은 건너뜁니다)`,
+                  )) return;
+                  void matchAll({ mode: 'unmatched' });
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                <Play className="w-3.5 h-3.5" />
+                전체 매칭 ({queueableCount})
+              </button>
+              <button
+                type="button"
+                disabled={loading || busy || continueCount === 0}
+                title={
+                  matchedCount === 0
+                    ? '확정 매칭이 있어야 이어서 시작할 수 있습니다'
+                    : continueCount === 0
+                      ? '마지막 매칭 이후에 미확정 건이 없습니다'
+                      : '마지막 확정 매칭 다음부터 미확정 건만 이어서 매칭'
+                }
+                onClick={() => {
+                  if (!confirm(
+                    `마지막 매칭 다음부터 미확정 ${continueCount}건을 이어서 매칭할까요?`,
+                  )) return;
+                  void matchAll({ mode: 'continue' });
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:opacity-50"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+                이어서 매칭 ({continueCount})
+              </button>
+              <button
+                type="button"
+                disabled={loading || busy || rows.length === 0}
+                onClick={() => {
+                  if (matchedCount > 0) {
+                    if (!confirm('이미 매칭된 건이 있습니다. 처음부터 다시 매칭시키겠습니까?')) return;
+                  } else if (!confirm(
+                    `전체 ${rows.length}건을 처음부터 매칭할까요?`,
+                  )) {
+                    return;
+                  }
+                  void matchAll({ mode: 'rematch_all' });
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                전체 재매칭 ({rows.length})
+              </button>
+            </>
           )}
         </div>
       </div>
