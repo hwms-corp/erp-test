@@ -588,14 +588,63 @@ export function useOrderMailMatch() {
   }, [queueActive, matchOneInternal, clearOrderMatches, loadList]);
 
   /**
-   * 전체 매칭 큐: 미확정 견적을 하나씩 순차 처리, 건별 즉시 UI 반영.
+   * 매칭 큐 모드
+   * - unmatched: 미확정만 (기존 전체 매칭)
+   * - continue: 마지막 확정 매칭 건의 다음 행부터 미확정만
+   * - rematch_all: 확정 포함 전 건 처음부터 다시
    */
-  const matchAll = useCallback(async () => {
+  const matchAll = useCallback(async (
+    opts?: { mode?: 'unmatched' | 'continue' | 'rematch_all' },
+  ) => {
     if (queueActive || matchingOrderId != null) return;
-    const queue = rowsRef.current.filter(r => r.match?.status !== 'matched');
-    if (queue.length === 0) {
-      setError('매칭할 미확정 견적이 없습니다. (이미 확정된 건은 건너뜁니다)');
-      return;
+    const mode = opts?.mode ?? 'unmatched';
+    const all = rowsRef.current;
+    let queue: LearningOrderListItem[] = [];
+    let label = '전체 매칭';
+
+    if (mode === 'rematch_all') {
+      queue = [...all];
+      label = '전체 재매칭';
+    } else if (mode === 'continue') {
+      label = '이어서 매칭';
+      const matched = all.filter(r => r.match?.status === 'matched');
+      if (matched.length === 0) {
+        setError('이어서 시작할 확정 매칭이 없습니다. 「전체 매칭」을 사용하세요.');
+        return;
+      }
+      // 마지막 매칭 = matched_at 최신. 동률이면 목록상 더 아래 건.
+      let anchor = matched[0];
+      for (const r of matched) {
+        const aAt = anchor.match?.matched_at || '';
+        const bAt = r.match?.matched_at || '';
+        if (bAt > aAt) {
+          anchor = r;
+          continue;
+        }
+        if (bAt === aAt) {
+          const ai = all.findIndex(x => x.order.id === anchor.order.id);
+          const bi = all.findIndex(x => x.order.id === r.order.id);
+          if (bi > ai) anchor = r;
+        }
+      }
+      const idx = all.findIndex(r => r.order.id === anchor.order.id);
+      if (idx < 0) {
+        setError('이어서 시작할 위치를 찾지 못했습니다.');
+        return;
+      }
+      queue = all.slice(idx + 1).filter(r => r.match?.status !== 'matched');
+      if (queue.length === 0) {
+        setError(
+          `마지막 매칭(${anchor.order.doc_no}) 이후에 처리할 미확정 견적이 없습니다.`,
+        );
+        return;
+      }
+    } else {
+      queue = all.filter(r => r.match?.status !== 'matched');
+      if (queue.length === 0) {
+        setError('매칭할 미확정 견적이 없습니다. (이미 확정된 건은 건너뜁니다)');
+        return;
+      }
     }
 
     abortRef.current?.abort();
@@ -615,7 +664,7 @@ export function useOrderMailMatch() {
         throwIfAborted(ac.signal);
         setQueueDone(done);
         setProgress(
-          `전체 매칭 ${done + 1}/${queue.length} · ${item.order.doc_no}`,
+          `${label} ${done + 1}/${queue.length} · ${item.order.doc_no}`,
         );
         try {
           await matchOneInternal(item.order.id, {
@@ -653,16 +702,16 @@ export function useOrderMailMatch() {
         setQueueDone(done);
         // matchingOrderId는 다음 건 matchOneInternal에서 바로 갱신 — 중간에 null로 끊지 않음(말풍선 전환용)
       }
-      setProgress(`전체 매칭 완료 · ${done}/${queue.length}`);
+      setProgress(`${label} 완료 · ${done}/${queue.length}`);
       setMatchingOrderId(null);
     } catch (e) {
       const aborted =
         (e instanceof Error && (e.name === 'AbortError' || e.message.includes('중단'))) ||
         (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError');
       if (aborted) {
-        setError(`전체 매칭을 중단했습니다. (${done}/${queue.length} 완료)`);
+        setError(`${label}을 중단했습니다. (${done}/${queue.length} 완료)`);
       } else {
-        setError(e instanceof Error ? e.message : '전체 매칭 실패');
+        setError(e instanceof Error ? e.message : `${label} 실패`);
       }
       setProgress('');
     } finally {
